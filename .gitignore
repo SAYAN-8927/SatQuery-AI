@@ -1,0 +1,13 @@
+old_data/
+scratch/
+uploads/
+test_output.pdf
+__pycache__/
+*.py[cod]
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Large VLM training/benchmark data
+app/ai/dataset/images/
+app/ai/dataset/rs_benchmark_images/

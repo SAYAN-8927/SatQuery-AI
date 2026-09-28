@@ -1,0 +1,122 @@
+{
+  "1": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+  },
+  "2": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+  },
+  "3": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Scene: LC09_L2SP_141040_20260826_20260827_02_T1"
+  },
+  "4": {
+    "pass": true,
+    "details": "Blocked correctly: True, Msg: Change detection requires a compatible before/after scene pair. The current analysis context contains only one scene. Please select a bi-temporal pair."
+  },
+  "5": {
+    "pass": true,
+    "details": "Exec NDVI: True, Blocked Change: True"
+  },
+  "6": {
+    "pass": true,
+    "details": "Exec NDVI: True, Exec Change: True"
+  },
+  "7": {
+    "pass": true,
+    "details": "VLM: True, NDVI: True, Change: True"
+  },
+  "8": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Intent: vegetation_analysis"
+  },
+  "9": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Intent: vegetation_analysis"
+  },
+  "10": {
+    "pass": true,
+    "details": "Tool: remote_sensing_vlm, Intent: scene_description"
+  },
+  "11": {
+    "pass": true,
+    "details": "Scientific blocked: True, Explanation: NDVI and multispectral scientific calculations require calibrated Red and Near-Infrared (NIR) spectral bands (e.g., Landsat-9 B4 and B5 surface reflectance). The selected input 'Screenshot 2026-09-20 204539.png' is a standard RGB image (PNG, 1801 \u00d7 776) and does not contain the required spectral information. Scientific calculations cannot be performed on standard RGB images."
+  },
+  "12": {
+    "pass": true,
+    "details": "Tool: remote_sensing_vlm, Answer length: 1899"
+  },
+  "13": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+  },
+  "14": {
+    "pass": true,
+    "details": "Tool: change_detection_model, Delta NDVI: 0.0303"
+  },
+  "15": {
+    "pass": true,
+    "details": "Single blocked: True, Pair executed: True"
+  },
+  "16": {
+    "pass": true,
+    "details": "Tool: optical_sar_model, Classification: Arid / Sparse Surface with High Background Roughness"
+  },
+  "17": {
+    "pass": true,
+    "details": "Tool: optical_sar_model, Radar Veg Index: 0.6665"
+  },
+  "18": {
+    "pass": true,
+    "details": "Tool: spectral_band_analysis, Sig: Sparse Vegetation / Bare Soil / Rock Surface"
+  },
+  "19": {
+    "pass": true,
+    "details": "Tool: spectral_band_analysis, NDWI: -0.1972"
+  },
+  "20": {
+    "pass": true,
+    "details": "NDVI Exec: True, Change Exec: True"
+  },
+  "21": {
+    "pass": true,
+    "details": "21a Tool: ndvi_analysis, 21b Tool: ndvi_analysis"
+  },
+  "22": {
+    "pass": true,
+    "details": "Tool: scene_metadata_model, Has Landsat: True, Has Date: True, Has Res: True"
+  },
+  "23": {
+    "pass": true,
+    "details": "Rejected cleanly: True, Error msg: The previous scene was removed. Select another scene to continue."
+  },
+  "24": {
+    "pass": true,
+    "details": "Scene A: Screenshot_2026-09-20_204539, Scene B: LC09_L2SP_141040_20260826_20260827_02_T1"
+  },
+  "25": {
+    "pass": true,
+    "details": "Catalog intact with 11 scenes"
+  },
+  "26": {
+    "pass": true,
+    "details": "Upload 1 saved as 'test_dup.png', Upload 2 saved as 'test_dup_93b58630.png' (Coexisting unique identities)"
+  },
+  "27": {
+    "pass": true,
+    "details": "Tool: remote_sensing_vlm, Intent: scene_description"
+  },
+  "28": {
+    "pass": true,
+    "details": "Tool: unsupported_capability_handler, Message: Weather forecasting and future meteorological predictions are not supported by S..."
+  },
+  "29": {
+    "pass": true,
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+  },
+  "30": {
+    "pass": true,
+    "details": "Run 1: 0.1763395369052887, Run 2: 0.1763395369052887, Deterministic match: True"
+  }
+}

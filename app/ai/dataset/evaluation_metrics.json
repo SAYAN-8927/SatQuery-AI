@@ -1,0 +1,11 @@
+{
+  "evaluation_timestamp": "2026-09-19T14:15:22Z",
+  "total_test_samples": 27,
+  "terrain_classes_evaluated": 9,
+  "terrain_accuracy_percentage": 22.22,
+  "verification_accuracy_percentage": 50.0,
+  "overall_recognition_accuracy": 33.33,
+  "average_inference_latency_seconds": 13.689,
+  "tested_model": "HuggingFaceTB/SmolVLM-500M-Instruct",
+  "adapter_tested": "app/ai/lora_adapter_rs"
+}

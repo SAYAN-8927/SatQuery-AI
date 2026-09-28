@@ -1,0 +1,185 @@
+[
+  {
+    "label": "TEST 1",
+    "query": "Is there vegetation in this image?",
+    "success": true,
+    "intent": "scene_description",
+    "tool": "remote_sensing_vlm",
+    "has_vlm": true,
+    "confidence": {
+      "score": 0.9,
+      "level": "high",
+      "basis": [
+        "Analysis performed using fine-tuned SmolVLM-500M remote-sensing LoRA model.",
+        "Visual features grounded from image: LC08_L2SP_009012_20260720_20260725_02_T1_RGB.png",
+        "Domain-adapted PEFT adapter active (app\\ai\\lora_adapter_rs)."
+      ]
+    },
+    "evidence": {},
+    "steps": [
+      "input_analysis",
+      "input_analysis",
+      "query_parsing",
+      "query_parsing",
+      "tool_selection",
+      "tool_selection",
+      "tool_execution",
+      "tool_execution",
+      "result_interpretation"
+    ],
+    "latency_seconds": 17.85,
+    "full_interpretation": "Yes, there is a tree in the image."
+  },
+  {
+    "label": "TEST 2",
+    "query": "Calculate NDVI and explain the vegetation.",
+    "success": true,
+    "intent": "vegetation_analysis",
+    "tool": "ndvi_analysis",
+    "has_vlm": true,
+    "confidence": {
+      "score": 1.0,
+      "level": "high",
+      "basis": [
+        "Mean NDVI computed mathematically from Landsat surface reflectance.",
+        "Spatial NDVI map generated as visual evidence.",
+        "NDVI spatial distribution shows consistent variance.",
+        "Multimodal VLM visual context synthesized with NDVI spectral statistics."
+      ]
+    },
+    "evidence": {
+      "ndvi_map": "/uploads/multispectral/LC09_L2SP_141040_20260810_20260811_02_T1_NDVI.png"
+    },
+    "steps": [
+      "input_analysis",
+      "input_analysis",
+      "query_parsing",
+      "query_parsing",
+      "tool_selection",
+      "tool_selection",
+      "tool_execution",
+      "tool_execution",
+      "vlm_hybrid_synthesis",
+      "vlm_hybrid_synthesis",
+      "result_interpretation"
+    ],
+    "latency_seconds": 24.82,
+    "full_interpretation": "The scene shows a relatively low overall vegetation signal with sparse vegetation alongside bare soil or urban surfaces (Mean NDVI: 0.15).\n\nMultimodal Visual Context:\nThe satellite image shows a vast, expansive landscape dominated by a mix of natural and man-made features. The dominant feature is a large, dark, rocky terrain that appears to be covered in a thick layer of dark, possibly volcanic or sedimentary rock. This rocky terrain is interspersed with patches of lighter, possibly sandy or rocky ground, which are interspersed with patches of vegetation. The vegetation is sparse, with only a few scattered patches of green, indicating that the area might be a desert or a semi-"
+  },
+  {
+    "label": "TEST 3",
+    "query": "Compare these two dates and tell me what changed.",
+    "success": true,
+    "intent": "change_detection",
+    "tool": "change_detection_model",
+    "has_vlm": true,
+    "confidence": {
+      "score": 1.0,
+      "level": "high",
+      "basis": [
+        "Mean NDVI difference indicates measurable temporal change.",
+        "NDVI delta variance remains within controlled physical thresholds.",
+        "Spatial NDVI difference heatmap generated as visual evidence.",
+        "3-panel Before/After/Change comparative triplet generated as visual evidence.",
+        "Multimodal VLM visual synthesis integrated with bi-temporal delta metrics."
+      ]
+    },
+    "evidence": {
+      "change_map": "/uploads/change_detection/LC09_L2SP_141040_20260810_20260811_02_T1_to_LC09_L2SP_141040_20260826_20260827_02_T1_NDVI_change.png",
+      "comparison_triplet": "/uploads/change_detection/LC09_L2SP_141040_20260810_20260811_02_T1_to_LC09_L2SP_141040_20260826_20260827_02_T1_comparison_triplet.png",
+      "triplet_disk_path": "uploads\\change_detection\\LC09_L2SP_141040_20260810_20260811_02_T1_to_LC09_L2SP_141040_20260826_20260827_02_T1_comparison_triplet.png",
+      "before_rgb": "/uploads/change_detection/LC09_L2SP_141040_20260810_20260811_02_T1_RGB.png",
+      "after_rgb": "/uploads/change_detection/LC09_L2SP_141040_20260826_20260827_02_T1_RGB.png"
+    },
+    "steps": [
+      "input_analysis",
+      "input_analysis",
+      "query_parsing",
+      "query_parsing",
+      "tool_selection",
+      "tool_selection",
+      "tool_execution",
+      "tool_execution",
+      "change_vqa_synthesis",
+      "change_vqa_synthesis",
+      "result_interpretation"
+    ],
+    "latency_seconds": 12.21,
+    "full_interpretation": "Bi-temporal satellite change detection between 2026-08-10 and 2026-08-26:\n\u2022 Dynamic Pattern: Net Vegetation Greening / Seasonal Growth Dominant\n\u2022 Mean NDVI Shift: +0.0303\n\u2022 Vegetation Gain: 24.7% (green pixels)\n\u2022 Vegetation Loss: 16.2% (red pixels)\n\u2022 Stable Terrain: 59.1% (gray pixels)\n\nChange-VQA Multimodal Synthesis:\nThe vegetation gained 24.7% of the land area in the 3-panels. The loss of vegetation occurred in 16.2% of the land area. The landscape dynamics were stable."
+  },
+  {
+    "label": "TEST 4",
+    "query": "Analyze the spectral characteristics of this image.",
+    "success": true,
+    "intent": "spectral_analysis",
+    "tool": "spectral_band_analysis",
+    "has_vlm": true,
+    "confidence": {
+      "score": 0.95,
+      "level": "high",
+      "basis": [
+        "Surface reflectance calibrated from 4 physical Landsat-8/9 optical bands (B2, B3, B4, B5).",
+        "Deterministic NDVI and NDWI spectral indices computed directly from calibrated band arrays.",
+        "Spectral profile reflectance chart generated as visual evidence.",
+        "Multimodal VLM visual context synthesized with spectral band data."
+      ]
+    },
+    "evidence": {
+      "spectral_profile_chart": "/uploads/multispectral/LC09_L2SP_141040_20260810_20260811_02_T1_spectral_profile.png",
+      "chart_disk_path": "uploads\\multispectral\\LC09_L2SP_141040_20260810_20260811_02_T1_spectral_profile.png"
+    },
+    "steps": [
+      "input_analysis",
+      "input_analysis",
+      "query_parsing",
+      "query_parsing",
+      "tool_selection",
+      "tool_selection",
+      "tool_execution",
+      "tool_execution",
+      "vlm_hybrid_synthesis",
+      "vlm_hybrid_synthesis",
+      "result_interpretation"
+    ],
+    "latency_seconds": 24.15,
+    "full_interpretation": "Multispectral signature extracted across 4 Landsat optical bands for scene LC09_L2SP_141040_20260810_20260811_02_T1:\n\u2022 Blue (0.48\u00b5m): 0.310 | Green (0.56\u00b5m): 0.333 | Red (0.65\u00b5m): 0.342 | NIR (0.86\u00b5m): 0.397\n\u2022 Environmental Signature: Sparse Vegetation / Bare Soil / Rock Surface\n\u2022 Normalized Difference Vegetation Index (NDVI): +0.145 (32.5% vegetative pixel coverage)\n\u2022 Normalized Difference Water Index (NDWI - McFeeters 1996 Open Water): -0.172 (12.1% water/high-moisture coverage)\n\u2022 Simple Biomass Ratio (NIR/Red): 91.00\n\nMultimodal Visual Context:\nThe multispectral image shows a landscape with a mix of vegetation and bare soil. The vegetation appears to be sparse, with patches of green and brown. The bare soil is visible in the lower right corner, indicating a lack of vegetation coverage. The water bodies are not visible in the image, but the presence of vegetation suggests that the area might be a wetland or a forested region. The image also shows a mix of colors, with the vegetation being predominantly green and the bare soil being brown."
+  },
+  {
+    "label": "TEST 5",
+    "query": "Analyze this scene using optical and SAR data.",
+    "success": true,
+    "intent": "optical_sar_analysis",
+    "tool": "optical_sar_model",
+    "has_vlm": true,
+    "confidence": {
+      "score": 0.95,
+      "level": "high",
+      "basis": [
+        "Calibrated surface reflectance from physical Landsat-9 optical bands.",
+        "Calibrated sigma-naught (dB) backscatter from Sentinel-1 active C-band SAR.",
+        "Dual-sensor cross-validation achieved 21.2% spatial agreement.",
+        "4-panel multimodal fusion composite generated as visual evidence.",
+        "Multimodal VLM visual context synthesized with fused optical and polarimetric radar metrics."
+      ]
+    },
+    "evidence": {
+      "fusion_composite": "/uploads/fusion/LC09_L2SP_141040_20260810_20260811_02_T1_optical_sar_fusion_composite.png",
+      "composite_disk_path": "uploads\\fusion\\LC09_L2SP_141040_20260810_20260811_02_T1_optical_sar_fusion_composite.png"
+    },
+    "steps": [
+      "input_analysis",
+      "input_analysis",
+      "query_parsing",
+      "query_parsing",
+      "tool_selection",
+      "tool_selection",
+      "tool_execution",
+      "tool_execution",
+      "fusion_vlm_synthesis",
+      "fusion_vlm_synthesis",
+      "result_interpretation"
+    ],
+    "latency_seconds": 13.71,
+    "full_interpretation": "Multimodal Optical + SAR Fusion Analysis:\n\u2022 Combined Sensors: Landsat Optical (LC09_L2SP_141040_2026081) + Sentinel-1 C-SAR (S1A_IW_GRDH_1SDV_2026081)\n\u2022 Environmental Classification: Arid / Sparse Surface with High Background Roughness\n\u2022 Optical Signals: Mean NDVI = +0.093 (21.2% vegetative cover), Mean NDWI = -0.110\n\u2022 Active Radar Polarimetry: Mean VV = -13.94 dB, Mean VH = -21.28 dB, Radar Veg Index (RVI) = 0.628\n\u2022 Cross-Polarization Ratio (VH - VV): -7.35 dB (canopy volume scattering vs. surface roughness)\n\u2022 All-Weather Water Inundation: 9.6% confirmed across optical reflectance & radar specular reflection\n\u2022 Multi-Sensor Consensus: 21.2% spatial agreement between optical vigor and radar structural scattering (r = +0.61)\n\nMultimodal Visual Context & Scientific Insights:\nThe visible landscape shows a mix of land and water. The land is covered with vegetation, while the water is mostly covered with ice. The radar roughness is relatively high, indicating a dense ice cover. The canopy structure is not visible in the image, but it appears to be relatively dense."
+  }
+]
