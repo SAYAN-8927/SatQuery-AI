@@ -49,7 +49,7 @@ def read_reflectance(file_path: Path, size: int = 1024):
     Read a Landsat Collection 2 Surface Reflectance band,
     resample safely to size x size, and scale DN to reflectance.
     """
-    with rasterio.open(file_path) as dataset:
+    with rasterio.Env(GDAL_CACHEMAX=32), rasterio.open(file_path) as dataset:
         data = dataset.read(
             1,
             out_shape=(size, size),

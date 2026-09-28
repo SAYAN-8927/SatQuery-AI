@@ -110,7 +110,7 @@ def read_sar_band(
     if specified, and return calibrated backscatter array in decibels (dB).
     Handles direct projected CRS, GCP-based reprojection, direct dB scale and linear amplitude.
     """
-    with rasterio.open(file_path) as src:
+    with rasterio.Env(GDAL_CACHEMAX=32), rasterio.open(file_path) as src:
         sar_crs = src.crs
         sar_bounds = src.bounds
         sar_nodata = src.nodata

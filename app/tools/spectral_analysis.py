@@ -199,6 +199,173 @@ def draw_spectral_profile_chart(
     return output_path
 
 
+def compute_chunked_spectral_statistics(
+    bands: dict,
+    band_info: dict,
+    chunk_size: int = 1024
+) -> dict:
+    """
+    Compute full-resolution scientific per-band statistics (B2, B3, B4, B5)
+    and spectral indices (NDWI, NDVI, SR) across bounded windowed chunks (1024x1024).
+    Never loads complete high-resolution 7591x7751 rasters into RAM.
+    Accumulates count, sum, sum_of_squares, min, max incrementally.
+    """
+    import rasterio
+    from rasterio.windows import Window
+    import gc
+
+    b_names = ["B2", "B3", "B4", "B5"]
+    accumulators = {
+        b: {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": float("inf"), "max": float("-inf")}
+        for b in b_names
+    }
+    ndvi_accum = {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": float("inf"), "max": float("-inf"), "gt_02": 0}
+    ndwi_accum = {"count": 0, "sum": 0.0, "sum_sq": 0.0, "min": float("inf"), "max": float("-inf"), "gt_0": 0}
+    sr_accum = {"count": 0, "sum": 0.0}
+
+    with rasterio.Env(GDAL_CACHEMAX=32):
+        with rasterio.open(bands["B2"]) as ds2, \
+             rasterio.open(bands["B3"]) as ds3, \
+             rasterio.open(bands["B4"]) as ds4, \
+             rasterio.open(bands["B5"]) as ds5:
+
+            width = min(ds2.width, ds3.width, ds4.width, ds5.width)
+            height = min(ds2.height, ds3.height, ds4.height, ds5.height)
+            crs_str = str(ds2.crs)
+
+            nodata2 = ds2.nodata
+            nodata3 = ds3.nodata
+            nodata4 = ds4.nodata
+            nodata5 = ds5.nodata
+
+            for row_off in range(0, height, chunk_size):
+                h_chunk = min(chunk_size, height - row_off)
+                for col_off in range(0, width, chunk_size):
+                    w_chunk = min(chunk_size, width - col_off)
+                    win = Window(col_off, row_off, w_chunk, h_chunk)
+
+                    raw2 = ds2.read(1, window=win).astype(np.float32)
+                    raw3 = ds3.read(1, window=win).astype(np.float32)
+                    raw4 = ds4.read(1, window=win).astype(np.float32)
+                    raw5 = ds5.read(1, window=win).astype(np.float32)
+
+                    sr2 = (raw2 * 0.0000275) - 0.2
+                    sr3 = (raw3 * 0.0000275) - 0.2
+                    sr4 = (raw4 * 0.0000275) - 0.2
+                    sr5 = (raw5 * 0.0000275) - 0.2
+
+                    valid = (
+                        (raw2 != nodata2 if nodata2 is not None else raw2 > 0)
+                        & (raw3 != nodata3 if nodata3 is not None else raw3 > 0)
+                        & (raw4 != nodata4 if nodata4 is not None else raw4 > 0)
+                        & (raw5 != nodata5 if nodata5 is not None else raw5 > 0)
+                        & (raw2 > 0) & (raw3 > 0) & (raw4 > 0) & (raw5 > 0)
+                        & np.isfinite(sr2) & np.isfinite(sr3) & np.isfinite(sr4) & np.isfinite(sr5)
+                        & (sr2 >= 0.0) & (sr3 >= 0.0) & (sr4 >= 0.0) & (sr5 >= 0.0)
+                    )
+
+                    if np.any(valid):
+                        v2 = sr2[valid]
+                        v3 = sr3[valid]
+                        v4 = sr4[valid]
+                        v5 = sr5[valid]
+                        n = v2.size
+
+                        for b_key, v_arr in [("B2", v2), ("B3", v3), ("B4", v4), ("B5", v5)]:
+                            acc = accumulators[b_key]
+                            acc["count"] += n
+                            acc["sum"] += float(np.sum(v_arr))
+                            acc["sum_sq"] += float(np.sum(v_arr ** 2))
+                            acc["min"] = min(acc["min"], float(np.min(v_arr)))
+                            acc["max"] = max(acc["max"], float(np.max(v_arr)))
+
+                        # NDVI = (NIR - Red) / (NIR + Red)
+                        denom_ndvi = v5 + v4 + 1e-6
+                        ndvi_chunk = (v5 - v4) / denom_ndvi
+                        ndvi_accum["count"] += n
+                        ndvi_accum["sum"] += float(np.sum(ndvi_chunk))
+                        ndvi_accum["sum_sq"] += float(np.sum(ndvi_chunk ** 2))
+                        ndvi_accum["min"] = min(ndvi_accum["min"], float(np.min(ndvi_chunk)))
+                        ndvi_accum["max"] = max(ndvi_accum["max"], float(np.max(ndvi_chunk)))
+                        ndvi_accum["gt_02"] += int(np.sum(ndvi_chunk > 0.20))
+
+                        # NDWI = (Green - NIR) / (Green + NIR)
+                        denom_ndwi = v3 + v5 + 1e-6
+                        ndwi_chunk = (v3 - v5) / denom_ndwi
+                        ndwi_accum["count"] += n
+                        ndwi_accum["sum"] += float(np.sum(ndwi_chunk))
+                        ndwi_accum["sum_sq"] += float(np.sum(ndwi_chunk ** 2))
+                        ndwi_accum["min"] = min(ndwi_accum["min"], float(np.min(ndwi_chunk)))
+                        ndwi_accum["max"] = max(ndwi_accum["max"], float(np.max(ndwi_chunk)))
+                        ndwi_accum["gt_0"] += int(np.sum(ndwi_chunk > 0.0))
+
+                        # SR = NIR / Red
+                        sr_chunk = v5 / (v4 + 1e-6)
+                        sr_accum["count"] += n
+                        sr_accum["sum"] += float(np.sum(sr_chunk))
+
+                    del raw2, raw3, raw4, raw5, sr2, sr3, sr4, sr5, valid
+
+    gc.collect()
+
+    band_stats = {}
+    band_means = {}
+
+    for b_name in b_names:
+        acc = accumulators[b_name]
+        if acc["count"] > 0:
+            m = acc["sum"] / acc["count"]
+            v = max(0.0, (acc["sum_sq"] / acc["count"]) - (m ** 2))
+            s = math.sqrt(v)
+            band_means[b_name] = m
+            band_stats[b_name] = {
+                "band_name": band_info[b_name]["name"],
+                "wavelength_microns": band_info[b_name]["wavelength"],
+                "mean_reflectance": round(m, 4),
+                "stddev": round(s, 4),
+                "min": round(acc["min"], 4),
+                "max": round(acc["max"], 4)
+            }
+        else:
+            band_means[b_name] = 0.0
+            band_stats[b_name] = {
+                "band_name": band_info[b_name]["name"],
+                "wavelength_microns": band_info[b_name]["wavelength"],
+                "mean_reflectance": 0.0,
+                "stddev": 0.0,
+                "min": 0.0,
+                "max": 0.0
+            }
+
+    valid_count = ndwi_accum["count"]
+
+    if valid_count > 0:
+        mean_ndvi = ndvi_accum["sum"] / valid_count
+        mean_ndwi = ndwi_accum["sum"] / valid_count
+        mean_sr = (sr_accum["sum"] / valid_count) if valid_count > 0 else 0.0
+        water_fraction = (ndwi_accum["gt_0"] / valid_count) * 100.0
+        veg_fraction = (ndvi_accum["gt_02"] / valid_count) * 100.0
+    else:
+        mean_ndvi = 0.0
+        mean_ndwi = 0.0
+        mean_sr = 0.0
+        water_fraction = 0.0
+        veg_fraction = 0.0
+
+    return {
+        "band_stats": band_stats,
+        "band_means": band_means,
+        "mean_ndvi": mean_ndvi,
+        "mean_ndwi": mean_ndwi,
+        "mean_sr": mean_sr,
+        "water_fraction": water_fraction,
+        "veg_fraction": veg_fraction,
+        "valid_count": valid_count,
+        "crs": crs_str,
+        "dimensions": {"width": width, "height": height}
+    }
+
+
 def run_spectral_analysis(
     upload_dir: Path = Path("uploads"),
     output_dir: Path = Path("uploads/multispectral"),
@@ -208,8 +375,8 @@ def run_spectral_analysis(
 ) -> dict:
     """
     Execute multispectral band reflectance analysis across B2, B3, B4, and B5.
-    Calculates per-band statistics, spectral indices (NDVI, NDWI, SR),
-    and generates a professional spectral signature profile chart.
+    Calculates full-resolution per-band statistics and spectral indices (NDVI, NDWI, SR)
+    using chunked streaming windows (1024x1024) to guarantee < 512 MB memory usage.
     """
     try:
         found_data = find_landsat_bands(upload_dir, target_scene=target_scene)
@@ -223,82 +390,26 @@ def run_spectral_analysis(
         scene = found_data["scene"]
         bands = found_data["bands"]
 
-        # Read bands
-        b2_raw, p2 = read_band(bands["B2"], size)
-        b3_raw, p3 = read_band(bands["B3"], size)
-        b4_raw, p4 = read_band(bands["B4"], size)
-        b5_raw, p5 = read_band(bands["B5"], size)
+        # Detect sensor identity and band wavelengths dynamically
+        sensor_title, band_info = get_sensor_band_info(scene)
 
-        # Scale to surface reflectance
-        b2 = scale_landsat_surface_reflectance(b2_raw, p2["nodata"])
-        b3 = scale_landsat_surface_reflectance(b3_raw, p3["nodata"])
-        b4 = scale_landsat_surface_reflectance(b4_raw, p4["nodata"])
-        b5 = scale_landsat_surface_reflectance(b5_raw, p5["nodata"])
+        # Compute full-resolution chunked statistics across B2, B3, B4, B5
+        chunked = compute_chunked_spectral_statistics(bands, band_info, chunk_size=1024)
 
-        # Create valid mask
-        valid_mask = (
-            np.isfinite(b2)
-            & np.isfinite(b3)
-            & np.isfinite(b4)
-            & np.isfinite(b5)
-            & (b2 >= 0)
-            & (b3 >= 0)
-            & (b4 >= 0)
-            & (b5 >= 0)
-        )
-
-        if not np.any(valid_mask):
+        if chunked["valid_count"] == 0:
             return {
                 "success": False,
                 "tool": "spectral_band_analysis",
                 "error": "No valid surface reflectance pixels found across the 4 bands."
             }
 
-        # Detect sensor identity and band wavelengths dynamically
-        sensor_title, band_info = get_sensor_band_info(scene)
-
-        # Calculate per-band reflectance statistics
-        band_stats = {}
-        band_means = {}
-        raw_bands = {"B2": b2, "B3": b3, "B4": b4, "B5": b5}
-
-        for b_name, b_arr in raw_bands.items():
-            vals = b_arr[valid_mask]
-            mean_v = float(np.mean(vals))
-            std_v = float(np.std(vals))
-            min_v = float(np.min(vals))
-            max_v = float(np.max(vals))
-
-            band_means[b_name] = mean_v
-            band_stats[b_name] = {
-                "band_name": band_info[b_name]["name"],
-                "wavelength_microns": band_info[b_name]["wavelength"],
-                "mean_reflectance": round(mean_v, 4),
-                "stddev": round(std_v, 4),
-                "min": round(min_v, 4),
-                "max": round(max_v, 4)
-            }
-
-        # Calculate Spectral Indices
-        v_b3 = b3[valid_mask]
-        v_b4 = b4[valid_mask]
-        v_b5 = b5[valid_mask]
-
-        # NDVI = (NIR - Red) / (NIR + Red)
-        ndvi_arr = (v_b5 - v_b4) / (v_b5 + v_b4 + 1e-6)
-        mean_ndvi = float(np.mean(ndvi_arr))
-
-        # NDWI (McFeeters 1996) = (Green - NIR) / (Green + NIR)
-        # Specifically formulated for open water body and surface moisture delineation
-        ndwi_arr = (v_b3 - v_b5) / (v_b3 + v_b5 + 1e-6)
-        mean_ndwi = float(np.mean(ndwi_arr))
-
-        # Simple Ratio = NIR / Red
-        sr_arr = v_b5 / (v_b4 + 1e-6)
-        mean_sr = float(np.mean(sr_arr))
-
-        water_fraction = float(np.mean(ndwi_arr > 0.0) * 100.0)
-        veg_fraction = float(np.mean(ndvi_arr > 0.20) * 100.0)
+        band_stats = chunked["band_stats"]
+        band_means = chunked["band_means"]
+        mean_ndvi = chunked["mean_ndvi"]
+        mean_ndwi = chunked["mean_ndwi"]
+        mean_sr = chunked["mean_sr"]
+        water_fraction = chunked["water_fraction"]
+        veg_fraction = chunked["veg_fraction"]
 
         # Environmental Signature Inference
         if mean_ndwi > 0.0:
@@ -400,9 +511,9 @@ def run_spectral_analysis(
                 "url": chart_web_url
             },
             "processing_metadata": {
-                "crs": p2.get("crs"),
-                "sampled_resolution": f"{size}x{size}",
-                "valid_pixel_count": int(np.sum(valid_mask))
+                "crs": chunked.get("crs"),
+                "sampled_resolution": "full_resolution_chunked_1024x1024",
+                "valid_pixel_count": int(chunked.get("valid_count", 0))
             }
         }
 

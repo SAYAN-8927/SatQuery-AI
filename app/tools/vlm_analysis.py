@@ -1,10 +1,8 @@
 import time
 import re
+import gc
 from pathlib import Path
 from PIL import Image
-import torch
-from transformers import AutoProcessor, AutoModelForImageTextToText
-from peft import PeftModel
 
 MODEL_ID = "HuggingFaceTB/SmolVLM-500M-Instruct"
 ADAPTER_DIR = Path("app/ai/lora_adapter_rs")
@@ -15,13 +13,18 @@ _PROCESSOR = None
 
 def get_vlm_model():
     """
-    Load and cache the SmolVLM model and LoRA adapter in memory.
-    Ensures the model is loaded only once instead of on every query.
+    Lazy load and cache the SmolVLM model and LoRA adapter in memory.
+    Ensures PyTorch / HuggingFace are NOT loaded on startup or during image upload.
+    Only loaded when a user query explicitly invokes VLM analysis.
     """
     global _MODEL, _PROCESSOR
 
     if _MODEL is not None and _PROCESSOR is not None:
         return _MODEL, _PROCESSOR
+
+    import torch
+    from transformers import AutoProcessor, AutoModelForImageTextToText
+    from peft import PeftModel
 
     print(f"Loading VLM processor from {ADAPTER_DIR if ADAPTER_DIR.exists() else MODEL_ID}...")
     if ADAPTER_DIR.exists():
@@ -31,7 +34,7 @@ def get_vlm_model():
 
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
-    print("Loading base SmolVLM model in float16...")
+    print("Loading base SmolVLM model...")
     base_model = AutoModelForImageTextToText.from_pretrained(
         MODEL_ID,
         dtype=torch_dtype,
@@ -248,12 +251,13 @@ def run_vlm_analysis(
         target_max_tokens = get_vlm_token_budget(query, default_max_tokens=384)
 
         # Natural stopping criteria: ensure eos_token_id and pad_token_id are set
+        import torch
         eos_token_id = processor.tokenizer.eos_token_id
         pad_token_id = processor.tokenizer.pad_token_id or eos_token_id
 
-        # Generate response with latency tracking
+        # Generate response with latency tracking and zero gradient allocation
         t0 = time.time()
-        with torch.no_grad():
+        with torch.inference_mode():
             generated_ids = model.generate(
                 **inputs,
                 max_new_tokens=target_max_tokens,
@@ -267,6 +271,12 @@ def run_vlm_analysis(
             generated_ids,
             skip_special_tokens=True
         )[0]
+
+        # Explicitly release GPU/RAM tensor references
+        del inputs, generated_ids
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Clean answer if it repeats the prompt
         if "Assistant:" in answer:

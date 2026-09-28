@@ -29,12 +29,32 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+def get_rss_memory_mb() -> float:
+    """Return the current process RSS memory in MB."""
+    try:
+        import psutil, os
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
+    except Exception:
+        try:
+            import resource
+            return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+        except Exception:
+            return 0.0
+
+
+def log_memory(stage: str):
+    """Log memory usage with standard prefix."""
+    rss = get_rss_memory_mb()
+    print(f"[MEMORY] {stage} - RSS: {rss:.2f} MB")
+
+
 @router.post("/api/images/upload")
 async def upload_image(
     file: UploadFile = File(...),
     workspace_id: str | None = Form(None),
     x_workspace_id: str | None = Header(None)
 ):
+    log_memory("before_upload")
     ws_id = workspace_id or x_workspace_id or "satquery_default"
     ws_dir = workspace_manager.get_workspace_dir(ws_id)
 
@@ -53,26 +73,39 @@ async def upload_image(
     extension = extension_result["extension"]
 
     # -----------------------------------------
-    # Save file to workspace (Unique identity for duplicate filenames)
+    # Save file to workspace with 1 MB streaming chunks (Zero RAM Spike)
     # -----------------------------------------
     import hashlib
-    content = await file.read()
-    content_hash = hashlib.sha256(content).hexdigest()
+    import gc
+
+    target_filename = file.filename
+    temp_file_path = ws_dir / f".tmp_{target_filename}"
+    sha256 = hashlib.sha256()
+
+    file.file.seek(0)
+    with open(temp_file_path, "wb") as buffer:
+        while chunk := file.file.read(1024 * 1024):
+            buffer.write(chunk)
+            sha256.update(chunk)
+
+    content_hash = sha256.hexdigest()
+    log_memory("after_save")
 
     from app.agent.input_analyzer import LANDSAT_PATTERN
     from app.services.sar_identifier import parse_sar_filename
     sar_info = parse_sar_filename(file.filename)
     is_landsat_or_sar = bool(LANDSAT_PATTERN.match(file.filename)) or bool(sar_info)
 
-    target_filename = file.filename
     file_path = ws_dir / target_filename
 
     if file_path.exists() and not is_landsat_or_sar:
         try:
+            existing_sha = hashlib.sha256()
             with open(file_path, "rb") as existing_f:
-                existing_hash = hashlib.sha256(existing_f.read()).hexdigest()
+                while c := existing_f.read(1024 * 1024):
+                    existing_sha.update(c)
 
-            if existing_hash != content_hash:
+            if existing_sha.hexdigest() != content_hash:
                 # Different physical file with duplicate filename: preserve both with unique hash suffix
                 stem = Path(file.filename).stem
                 suffix = Path(file.filename).suffix
@@ -81,18 +114,21 @@ async def upload_image(
         except Exception:
             pass
 
-    with open(file_path, "wb") as buffer:
-        buffer.write(content)
+    # Move temporary file to final target
+    if temp_file_path.resolve() != file_path.resolve():
+        if file_path.exists():
+            file_path.unlink()
+        shutil.move(temp_file_path, file_path)
 
-    # Also persist directly into root uploads/ directory so that files are physically
-    # present in uploads/ and directly accessible to tools and disk inspectors
+    # Also persist directly into root uploads/ directory via disk-to-disk copy
     root_upload_file = UPLOAD_DIR / target_filename
     if root_upload_file.resolve() != file_path.resolve():
         try:
-            with open(root_upload_file, "wb") as buffer:
-                buffer.write(content)
+            shutil.copyfile(file_path, root_upload_file)
         except Exception:
             pass
+
+    gc.collect()
 
     workspace_manager.touch_workspace(ws_id, reset_cleared=True)
 
@@ -151,6 +187,7 @@ async def upload_image(
             )
 
         response["metadata"] = tiff_result["metadata"]
+        log_memory("after_validation")
 
         # -----------------------------------------
         # Raster analysis
@@ -159,6 +196,7 @@ async def upload_image(
         raster_analysis = analyze_raster(file_path)
 
         response["raster_analysis"] = raster_analysis
+        log_memory("after_raster_analysis")
 
         # -----------------------------------------
         # Preview in workspace previews directory
@@ -179,6 +217,7 @@ async def upload_image(
                 pass
 
         response["preview"] = preview_result
+        log_memory("after_preview")
 
     # -----------------------------------------
     # Image classification
@@ -190,6 +229,7 @@ async def upload_image(
     )
 
     response["classification"] = classification
+    log_memory("after_classification")
 
     # -----------------------------------------
     # Band identification (Optical Landsat or SAR)
@@ -213,6 +253,7 @@ async def upload_image(
 
     response["band_information"] = band_information
 
+    gc.collect()
     return response
 
 

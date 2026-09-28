@@ -169,23 +169,117 @@ def find_landsat_bands(upload_dir: Path, target_scene: str = None):
     }
 
 
+def compute_chunked_ndvi_statistics(
+    b4_path: Path,
+    b5_path: Path,
+    chunk_size: int = 1024
+) -> dict:
+    """
+    Compute full-resolution scientific NDVI statistics across Landsat B4 (Red) and B5 (NIR)
+    using bounded windowed chunk streaming (1024x1024).
+    Never loads complete high-resolution 7591x7751 rasters into RAM.
+    Accumulates count, valid_count, sum, sum_of_squares, min, max incrementally.
+    """
+    import math
+    import gc
+    from rasterio.windows import Window
+
+    valid_count = 0
+    total_count = 0
+    sum_ndvi = 0.0
+    sum_sq_ndvi = 0.0
+    min_ndvi = float("inf")
+    max_ndvi = float("-inf")
+
+    with rasterio.Env(GDAL_CACHEMAX=32):
+        with rasterio.open(b4_path) as ds_red, rasterio.open(b5_path) as ds_nir:
+            width = min(ds_red.width, ds_nir.width)
+            height = min(ds_red.height, ds_nir.height)
+            crs = str(ds_red.crs)
+            nodata_red = ds_red.nodata
+            nodata_nir = ds_nir.nodata
+
+            for row_off in range(0, height, chunk_size):
+                h_chunk = min(chunk_size, height - row_off)
+                for col_off in range(0, width, chunk_size):
+                    w_chunk = min(chunk_size, width - col_off)
+                    win = Window(col_off, row_off, w_chunk, h_chunk)
+
+                    red_chunk = ds_red.read(1, window=win).astype(np.float32)
+                    nir_chunk = ds_nir.read(1, window=win).astype(np.float32)
+
+                    # Surface reflectance scaling: SR = DN * 0.0000275 - 0.2
+                    red_mask = (red_chunk != nodata_red) if nodata_red is not None else (red_chunk > 0)
+                    nir_mask = (nir_chunk != nodata_nir) if nodata_nir is not None else (nir_chunk > 0)
+                    chunk_valid = red_mask & nir_mask & (red_chunk > 0) & (nir_chunk > 0)
+
+                    red_sr = (red_chunk * 0.0000275) - 0.2
+                    nir_sr = (nir_chunk * 0.0000275) - 0.2
+
+                    chunk_valid = chunk_valid & np.isfinite(red_sr) & np.isfinite(nir_sr) & (red_sr >= 0.0) & (nir_sr >= 0.0)
+                    total_count += w_chunk * h_chunk
+
+                    if np.any(chunk_valid):
+                        r_v = red_sr[chunk_valid]
+                        n_v = nir_sr[chunk_valid]
+                        denom = n_v + r_v
+                        safe_mask = denom > 1e-6
+                        if np.any(safe_mask):
+                            ndvi_vals = (n_v[safe_mask] - r_v[safe_mask]) / denom[safe_mask]
+                            ndvi_vals = np.clip(ndvi_vals, -1.0, 1.0)
+
+                            c = ndvi_vals.size
+                            valid_count += c
+                            sum_ndvi += float(np.sum(ndvi_vals))
+                            sum_sq_ndvi += float(np.sum(ndvi_vals ** 2))
+                            chunk_min = float(np.min(ndvi_vals))
+                            chunk_max = float(np.max(ndvi_vals))
+                            if chunk_min < min_ndvi:
+                                min_ndvi = chunk_min
+                            if chunk_max > max_ndvi:
+                                max_ndvi = chunk_max
+
+                    del red_chunk, nir_chunk, red_sr, nir_sr, chunk_valid
+
+    gc.collect()
+
+    if valid_count > 0:
+        mean_ndvi = sum_ndvi / valid_count
+        variance = max(0.0, (sum_sq_ndvi / valid_count) - (mean_ndvi ** 2))
+        std_ndvi = math.sqrt(variance)
+    else:
+        mean_ndvi = 0.0
+        std_ndvi = 0.0
+        min_ndvi = 0.0
+        max_ndvi = 0.0
+
+    return {
+        "valid_count": valid_count,
+        "total_count": total_count,
+        "mean": round(float(mean_ndvi), 3),
+        "std": round(float(std_ndvi), 3),
+        "min": round(float(min_ndvi), 3),
+        "max": round(float(max_ndvi), 3),
+        "width": width,
+        "height": height,
+        "crs": crs
+    }
+
+
 def read_band(file_path: Path, size: int = 1024):
-
-    with rasterio.open(file_path) as dataset:
-
-        data = dataset.read(
-            1,
-            out_shape=(size, size),
-            resampling=Resampling.bilinear
-        )
-
-        profile = {
-            "width": dataset.width,
-            "height": dataset.height,
-            "crs": str(dataset.crs),
-            "nodata": dataset.nodata
-        }
-
+    with rasterio.Env(GDAL_CACHEMAX=32):
+        with rasterio.open(file_path) as dataset:
+            data = dataset.read(
+                1,
+                out_shape=(size, size),
+                resampling=Resampling.bilinear
+            )
+            profile = {
+                "width": dataset.width,
+                "height": dataset.height,
+                "crs": str(dataset.crs),
+                "nodata": dataset.nodata
+            }
     return data.astype(np.float32), profile
 
 
@@ -558,6 +652,9 @@ def process_multispectral_scene(
             ndvi_path
         )
 
+        # Compute full-resolution scientific NDVI statistics across chunks (zero RAM spike)
+        chunked_ndvi = compute_chunked_ndvi_statistics(bands["B4"], bands["B5"], chunk_size=1024)
+
         # Mirror generated artifacts to uploads/multispectral/ to guarantee
         # access regardless of whether URL includes workspaces/{id}/ or not
         mirror_dir = Path("uploads") / "multispectral"
@@ -589,6 +686,14 @@ def process_multispectral_scene(
         if has_rgb:
             bands_used["B2"] = "Blue (0.45 - 0.51 µm)"
             bands_used["B3"] = "Green (0.53 - 0.59 µm)"
+
+        # Explicitly release memory from preview arrays
+        del b4, b5
+        if has_rgb:
+            del b2, b3
+        del valid_mask, ndvi, ndvi_mask, valid_ndvi
+        import gc
+        gc.collect()
 
         # -----------------------------------------
         # Final result
@@ -629,14 +734,15 @@ def process_multispectral_scene(
             },
 
             "ndvi": {
-                "mean": float(
-                    np.mean(valid_ndvi)
-                ),
-                "stddev": float(
-                    np.std(valid_ndvi)
-                ),
+                "mean": chunked_ndvi["mean"],
+                "std": chunked_ndvi["std"],
+                "stddev": chunked_ndvi["std"],
+                "min": chunked_ndvi["min"],
+                "max": chunked_ndvi["max"],
                 "display_min": ndvi_min,
-                "display_max": ndvi_max
+                "display_max": ndvi_max,
+                "valid_pixels": chunked_ndvi["valid_count"],
+                "total_pixels": chunked_ndvi["total_count"]
             }
         }
 
