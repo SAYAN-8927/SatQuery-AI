@@ -441,15 +441,30 @@ export const ResultView: React.FC<ResultViewProps> = ({ result, loading }) => {
             <span>Analysis Components ({result.components.length})</span>
           </div>
           <div className="components-grid">
-            {result.components.map((comp, idx) => (
-              <div key={idx} className={`component-pill ${comp.status}`}>
-                <div className="pill-header">
-                  <span className="pill-title">{(comp.tool_name || comp.tool || comp.intent || 'Analysis Component').replace(/_/g, ' ')}</span>
-                  <span className="pill-status-tag">{comp.status}</span>
+            {result.components.map((comp, idx) => {
+              const isVlmTool = comp.tool === 'remote_sensing_vlm' || comp.tool_name === 'remote_sensing_vlm' || comp.intent === 'scene_description';
+              const isDeploymentConstrained = Boolean(
+                comp.status === 'bypassed' ||
+                result.analysis?.deployment_constrained ||
+                (result as any).deployment_constrained ||
+                result.interpretation?.basis?.status === 'deployment_constrained'
+              );
+              let displayStatus = comp.status;
+              if (isVlmTool) {
+                displayStatus = isDeploymentConstrained ? 'VLM BYPASSED' : 'VLM EXECUTED';
+              }
+              const statusClass = (isVlmTool && isDeploymentConstrained) ? 'bypassed' : comp.status;
+
+              return (
+                <div key={idx} className={`component-pill ${statusClass}`}>
+                  <div className="pill-header">
+                    <span className="pill-title">{(comp.tool_name || comp.tool || comp.intent || 'Analysis Component').replace(/_/g, ' ')}</span>
+                    <span className={`pill-status-tag ${statusClass}`}>{displayStatus}</span>
+                  </div>
+                  <div className="pill-message">{comp.message || comp.summary || ''}</div>
                 </div>
-                <div className="pill-message">{comp.message || comp.summary || ''}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

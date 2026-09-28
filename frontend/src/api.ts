@@ -35,7 +35,13 @@ export function resetWorkspaceId(): string {
   return wsId;
 }
 
-export async function checkHealth(): Promise<{ status: string; service: string }> {
+export async function checkHealth(): Promise<{
+  status: string;
+  service: string;
+  vlm_enabled?: boolean;
+  runtime_environment?: string;
+  device?: string;
+}> {
   const res = await fetch('/api/health');
   if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
   return res.json();

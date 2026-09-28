@@ -82,11 +82,18 @@ def fuse_multi_intent_results(
     # 3. Build components list for frontend rendering
     components_list = []
     for c in executed_components:
+        is_vlm = c["tool"] == "remote_sensing_vlm"
+        is_vlm_bypassed = is_vlm and (
+            c["execution_result"].get("deployment_constrained")
+            or not c["execution_result"].get("vlm_available", True)
+        )
+        status_val = "bypassed" if is_vlm_bypassed else "executed"
+
         components_list.append({
             "intent": c["intent"],
             "tool": c["tool"],
             "tool_name": c["tool"],
-            "status": "executed",
+            "status": status_val,
             "title": c["title"],
             "message": c["interpretation"].get("summary") or c["interpretation"].get("interpretation", ""),
             "summary": c["interpretation"].get("summary") or c["interpretation"].get("interpretation", ""),
@@ -801,16 +808,25 @@ def process_user_query(
             "returned_scene_id": exec_res.get("scene_id", target_id),
             "active_pair_id": active_pair_id if tool_name == "optical_sar_model" else None
         }
+        is_vlm_bypassed = (
+            tool_name == "remote_sensing_vlm"
+            and (exec_res.get("deployment_constrained") or not exec_res.get("vlm_available", True))
+        )
+        step_status = "bypassed" if is_vlm_bypassed else "completed"
+
         if exec_res.get("deployment_constrained"):
+            trace_completed_details["status"] = "VLM BYPASSED"
             trace_completed_details["vlm_status"] = "offline_low_memory_deployment"
             trace_completed_details["deployment_note"] = (
                 "VLM deep inference bypassed on 512 MB Render deployment to prevent out-of-memory crash. "
                 "Deterministic scientific tools remain fully functional."
             )
+        elif tool_name == "remote_sensing_vlm":
+            trace_completed_details["status"] = "VLM EXECUTED"
 
         trace.add_step(
             step="tool_execution",
-            status="completed",
+            status=step_status,
             details=trace_completed_details
         )
 

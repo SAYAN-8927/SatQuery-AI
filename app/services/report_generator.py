@@ -201,6 +201,15 @@ class SatQueryReportGenerator:
         rand_suffix = uuid.uuid4().hex[:6].upper()
         self.report_id = f"SQ-REP-{date_str}-{rand_suffix}"
 
+        # Detect deployment memory constraint (Render cloud vs local GPU)
+        from app.tools.vlm_analysis import is_local_vlm_enabled
+        self.is_vlm_bypassed = bool(
+            self.analysis.get("deployment_constrained")
+            or not self.analysis.get("vlm_available", True)
+            or self.interpretation.get("basis", {}).get("status") == "deployment_constrained"
+            or not is_local_vlm_enabled()
+        )
+
         # Initialize Typography & Colors
         self._init_styles()
 
@@ -400,6 +409,12 @@ class SatQueryReportGenerator:
 
         # Executive Metadata Grid (Table)
         gen_time = self.timestamp.strftime("%d %b %Y, %H:%M:%S UTC")
+        sci_pipeline = "Deterministic raster analysis" if self.is_vlm_bypassed else "Deterministic Raster Engine + VLM"
+        ai_engine = (
+            "<font color='#d97706'><b>VLM inference bypassed due to low-memory cloud deployment</b></font>"
+            if self.is_vlm_bypassed
+            else "SmolVLM-500M-Instruct (RS LoRA FP16)"
+        )
         meta_data = [
             [
                 Paragraph("<b>Platform & System:</b>", self.style_body_bold),
@@ -409,9 +424,9 @@ class SatQueryReportGenerator:
             ],
             [
                 Paragraph("<b>Scientific Pipeline:</b>", self.style_body_bold),
-                Paragraph("Deterministic Raster Engine + VLM", self.style_body),
+                Paragraph(sci_pipeline, self.style_body),
                 Paragraph("<b>AI Vision Engine:</b>", self.style_body_bold),
-                Paragraph("SmolVLM-500M-Instruct (RS LoRA FP16)", self.style_body),
+                Paragraph(ai_engine, self.style_body),
             ],
             [
                 Paragraph("<b>Primary Tool:</b>", self.style_body_bold),
@@ -922,15 +937,26 @@ class SatQueryReportGenerator:
         flowables.append(Paragraph("6. AI Vision-Language Qualitative Synthesis", self.style_section_h1))
 
         # Model Specs Card
-        model_meta = Table(
-            [[
-                Paragraph("<b>AI Architecture:</b>", self.style_body_bold),
-                Paragraph("SmolVLM-500M-Instruct", self.style_body),
-                Paragraph("<b>Adaptation:</b>", self.style_body_bold),
-                Paragraph("Remote Sensing LoRA (RS-LoRA FP16)", self.style_body),
-            ]],
-            colWidths=[105, 150, 85, 164]
-        )
+        if self.is_vlm_bypassed:
+            model_meta = Table(
+                [[
+                    Paragraph("<b>Configured Model:</b>", self.style_body_bold),
+                    Paragraph("SmolVLM-500M-Instruct + RS LoRA", self.style_body),
+                    Paragraph("<b>VLM Status:</b>", self.style_body_bold),
+                    Paragraph("<font color='#d97706'><b>VLM inference bypassed due to low-memory cloud deployment</b></font>", self.style_body),
+                ]],
+                colWidths=[105, 145, 75, 179]
+            )
+        else:
+            model_meta = Table(
+                [[
+                    Paragraph("<b>AI Architecture:</b>", self.style_body_bold),
+                    Paragraph("SmolVLM-500M-Instruct", self.style_body),
+                    Paragraph("<b>Adaptation:</b>", self.style_body_bold),
+                    Paragraph("Remote Sensing LoRA (RS-LoRA FP16)", self.style_body),
+                ]],
+                colWidths=[105, 150, 85, 164]
+            )
         model_meta.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
             ("BOX", (0, 0), (-1, -1), 0.5, self.c_border),
@@ -967,7 +993,7 @@ class SatQueryReportGenerator:
         ]))
         flowables.append(interp_box)
 
-        if vlm_context:
+        if vlm_context and not self.is_vlm_bypassed:
             flowables.append(Spacer(1, 4))
             vlm_box = Table(
                 [[
@@ -984,12 +1010,19 @@ class SatQueryReportGenerator:
 
         # Separation Notice
         flowables.append(Spacer(1, 4))
-        flowables.append(Paragraph(
-            "<b>Important Methodological Note:</b> Deterministic physical metrics (e.g. NDVI, backscatter dB) are strictly "
-            "calculated by scientific raster tools. The fine-tuned Vision-Language Model provides qualitative contextual explanation "
-            "and visual verification.",
-            self.style_body_muted
-        ))
+        if self.is_vlm_bypassed:
+            flowables.append(Paragraph(
+                "<b>Important Methodological Note:</b> Deterministic physical metrics (e.g. NDVI, backscatter dB) are strictly "
+                "calculated by scientific raster tools. Deep VLM inference is bypassed on low-memory cloud deployment to preserve system uptime.",
+                self.style_body_muted
+            ))
+        else:
+            flowables.append(Paragraph(
+                "<b>Important Methodological Note:</b> Deterministic physical metrics (e.g. NDVI, backscatter dB) are strictly "
+                "calculated by scientific raster tools. The fine-tuned Vision-Language Model provides qualitative contextual explanation "
+                "and visual verification.",
+                self.style_body_muted
+            ))
         flowables.append(Spacer(1, 10))
 
         return flowables
@@ -1035,14 +1068,36 @@ class SatQueryReportGenerator:
                 f"remaining stable. Supporting evidence is confirmed in the 3-panel change triplet."
             )
         elif t == "ndvi_analysis":
-            stats = self.analysis.get("ndvi_statistics") or {}
-            cov = stats.get("vegetation_coverage_percent") or self.analysis.get("vegetation_coverage", "N/A")
-            mean_v = stats.get("mean", "N/A")
-            finding_title = "Finding: Healthy Photosynthetic Vegetation Present"
-            finding_body = (
-                f"Target optical observation exhibits an area-weighted Mean NDVI of <b>{mean_v}</b>, with an estimated "
-                f"<b>{cov}%</b> vegetation canopy coverage across the evaluated raster extent."
-            )
+            stats = self.analysis.get("ndvi_statistics") or self.analysis.get("statistics") or {}
+            cov = stats.get("vegetation_coverage_percent") or stats.get("vegetation_coverage") or self.analysis.get("vegetation_coverage")
+            mean_v = stats.get("mean_ndvi") if stats.get("mean_ndvi") is not None else stats.get("mean", "N/A")
+
+            try:
+                mean_num = float(mean_v)
+            except (ValueError, TypeError):
+                mean_num = None
+
+            if mean_num is not None and mean_num < 0:
+                finding_title = "Finding: Low / Predominantly Non-Vegetated Signal"
+                cov_desc = f" with an estimated <b>{cov}%</b> canopy coverage" if cov else ""
+                finding_body = (
+                    f"Target optical observation exhibits an area-weighted Mean NDVI of <b>{mean_v}</b>, indicating a low / predominantly non-vegetated "
+                    f"vegetation signal{cov_desc} across the evaluated raster extent (consistent with surface water, bare soil, rock, or non-photosynthetic terrain)."
+                )
+            elif mean_num is not None and mean_num < 0.2:
+                finding_title = "Finding: Sparse / Low-Density Vegetation Signal"
+                cov_desc = f" with an estimated <b>{cov}%</b> canopy coverage" if cov else ""
+                finding_body = (
+                    f"Target optical observation exhibits an area-weighted Mean NDVI of <b>{mean_v}</b>, indicating sparse scrub, low-density "
+                    f"canopy, or mixed background substrate{cov_desc} across the evaluated raster extent."
+                )
+            else:
+                finding_title = "Finding: Healthy Photosynthetic Vegetation Present"
+                cov_str = f"an estimated <b>{cov}%</b>" if cov else "vegetation canopy"
+                finding_body = (
+                    f"Target optical observation exhibits an area-weighted Mean NDVI of <b>{mean_v}</b>, with "
+                    f"{cov_str} coverage across the evaluated raster extent."
+                )
         elif t == "spectral_analysis":
             indices = self.analysis.get("spectral_indices") or {}
             finding_title = "Finding: Distinct Multispectral Surface Signature"
@@ -1192,11 +1247,21 @@ class SatQueryReportGenerator:
         flowables.append(Spacer(1, 8))
 
         # Reproducibility Table
+        vlm_repro_val = (
+            "SmolVLM-500M-Instruct + RS LoRA (Configured; inference bypassed due to 512MB cloud limit)"
+            if self.is_vlm_bypassed
+            else "HuggingFace SmolVLM-500M-Instruct + RS LoRA FP16"
+        )
+        backend_repro_val = (
+            "Deterministic raster analysis (FastAPI • Rasterio)"
+            if self.is_vlm_bypassed
+            else "FastAPI 0.141.1 • Rasterio 1.5.1 • PyTorch 2.11 (CUDA 12.8)"
+        )
         repro_data = [
             [Paragraph("<b>Reproducibility Parameter</b>", self.style_body_bold), Paragraph("<b>Specification & Parameter State</b>", self.style_body_bold)],
             [Paragraph("Orchestrator Agent", self.style_body), Paragraph("SatQuery Agent (Input Analyzer ➔ Tool Selector ➔ Scientific Engine ➔ SmolVLM)", self.style_body)],
-            [Paragraph("Deterministic Backend", self.style_body), Paragraph("FastAPI 0.141.1 • Rasterio 1.5.1 • PyTorch 2.11 (CUDA 12.8)", self.style_body)],
-            [Paragraph("VLM Weights & LoRA", self.style_body), Paragraph("HuggingFace SmolVLM-500M-Instruct + RS LoRA FP16", self.style_body)],
+            [Paragraph("Deterministic Backend", self.style_body), Paragraph(backend_repro_val, self.style_body)],
+            [Paragraph("VLM Weights & LoRA", self.style_body), Paragraph(vlm_repro_val, self.style_body)],
             [Paragraph("Report Generation Time", self.style_body), Paragraph(self.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"), self.style_code)],
             [Paragraph("Report Audit ID", self.style_body), Paragraph(self.report_id, self.style_code)],
         ]

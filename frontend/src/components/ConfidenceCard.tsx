@@ -4,10 +4,18 @@ import type { ConfidenceInfo } from '../types';
 
 interface ConfidenceCardProps {
   confidence?: ConfidenceInfo;
+  deploymentConstrained?: boolean;
 }
 
-export const ConfidenceCard: React.FC<ConfidenceCardProps> = ({ confidence }) => {
+export const ConfidenceCard: React.FC<ConfidenceCardProps> = ({ confidence, deploymentConstrained }) => {
   if (!confidence) return null;
+
+  const isConstrained = Boolean(
+    deploymentConstrained ||
+    (confidence as any)?.deployment_constrained ||
+    (confidence as any)?.basis?.status === 'deployment_constrained' ||
+    (Array.isArray(confidence.basis) && confidence.basis.some((b: any) => typeof b === 'string' && (b.includes('512 MB') || b.includes('bypassed'))))
+  );
 
   const scorePct = Math.round(confidence.score * 100);
   const level = (confidence.level || 'high').toUpperCase();
@@ -44,7 +52,9 @@ export const ConfidenceCard: React.FC<ConfidenceCardProps> = ({ confidence }) =>
 
       {/* Scientific Explanation Subtitle */}
       <p className="confidence-sub-explanation">
-        Estimated from deterministic calculations, generated evidence, spatial consistency and successful model synthesis.
+        {isConstrained
+          ? 'Estimated from deterministic calculations, generated evidence and spatial consistency.'
+          : 'Estimated from deterministic calculations, generated evidence, spatial consistency and successful model synthesis.'}
       </p>
 
       <div className="confidence-score-display">

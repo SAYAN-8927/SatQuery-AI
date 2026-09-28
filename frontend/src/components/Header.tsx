@@ -1,12 +1,22 @@
 import React from 'react';
-import { Satellite, Cpu, Radio, ShieldCheck, Home } from 'lucide-react';
+import { Satellite, Cpu, ShieldCheck, Home } from 'lucide-react';
 
 interface HeaderProps {
   backendOnline: boolean;
   onGoHome?: () => void;
+  vlmEnabled?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ backendOnline, onGoHome }) => {
+export const Header: React.FC<HeaderProps> = ({ backendOnline, onGoHome, vlmEnabled }) => {
+  // Determine if running in cloud low-memory deployment (Render) vs local GPU environment
+  const isCloudDeployment = vlmEnabled !== undefined
+    ? !vlmEnabled
+    : (typeof window !== 'undefined' && (window.location.hostname.includes('render.com') || window.location.hostname.includes('onrender.com')));
+
+  const vlmRuntimeLabel = isCloudDeployment
+    ? 'SmolVLM-500M + RS LoRA · Cloud VLM Bypassed'
+    : 'SmolVLM-500M + RS LoRA · NVIDIA GTX 1650 FP16';
+
   return (
     <header className="mission-header">
       <div
@@ -40,14 +50,9 @@ export const Header: React.FC<HeaderProps> = ({ backendOnline, onGoHome }) => {
           <span>{backendOnline ? 'FastAPI Backend Online' : 'Backend Disconnected'}</span>
         </div>
 
-        <div className="status-badge">
-          <Radio size={14} color="#38bdf8" />
-          <span>SmolVLM-500M + RS LoRA</span>
-        </div>
-
-        <div className="status-badge">
-          <Cpu size={14} color="#a855f7" />
-          <span>NVIDIA GTX 1650 (FP16)</span>
+        <div className="status-badge" title={isCloudDeployment ? "Cloud low-memory deployment (VLM bypassed, raster tools active)" : "Local hardware acceleration (GTX 1650 FP16)"}>
+          <Cpu size={14} color={isCloudDeployment ? "#f59e0b" : "#a855f7"} />
+          <span>{vlmRuntimeLabel}</span>
         </div>
 
         <div className="sih-badge">

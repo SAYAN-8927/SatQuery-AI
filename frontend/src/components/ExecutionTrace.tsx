@@ -125,7 +125,11 @@ export const ExecutionTrace: React.FC<ExecutionTraceProps> = ({ trace }) => {
 
                   <div className="step-main-meta">
                     <span className="step-title-text">{formatStepTitle(step.step)}</span>
-                    <span className={`step-status-tag ${step.status}`}>{step.status}</span>
+                    <span className={`step-status-tag ${step.status}`}>
+                      {step.step === 'tool_execution' && (step.details?.tool === 'remote_sensing_vlm' || step.details?.vlm_status)
+                        ? (step.status === 'bypassed' || step.details?.vlm_status === 'offline_low_memory_deployment' ? 'VLM BYPASSED' : 'VLM EXECUTED')
+                        : step.status}
+                    </span>
                   </div>
 
                   <span className="step-timestamp-text">

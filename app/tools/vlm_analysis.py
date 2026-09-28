@@ -368,6 +368,8 @@ def run_vlm_analysis(
                 "scene_image": ev_url
             },
             "answer": answer.strip(),
+            "vlm_available": True,
+            "deployment_constrained": False,
             "model_metadata": {
                 "base_model": MODEL_ID,
                 "adapter_path": str(ADAPTER_DIR),

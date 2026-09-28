@@ -218,8 +218,10 @@ def interpret_vlm_result(analysis: dict):
             "headline": "VLM Offline (Cloud Deployment Memory Constraint)",
             "summary": answer,
             "confidence": {
-                "score": 1.0,
+                "score": 0.85,
                 "level": "high",
+                "explanation": "Estimated from deterministic calculations, generated evidence and spatial consistency.",
+                "deployment_constrained": True,
                 "basis": [
                     "Host environment enforces 512 MB memory limit (Render Free Tier).",
                     "SmolVLM-500M inference requires ~1.66 GB RAM and was bypassed to preserve uptime.",

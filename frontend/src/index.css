@@ -4247,6 +4247,12 @@ body::before {
   color: #fbbf24;
 }
 
+.component-pill.bypassed {
+  background: rgba(148, 163, 184, 0.12);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #94a3b8;
+}
+
 .pill-status-tag {
   font-size: 0.68rem;
   font-weight: 700;
@@ -4256,4 +4262,14 @@ body::before {
   padding: 1px 5px;
   border-radius: 4px;
   margin-left: 4px;
+}
+
+.pill-status-tag.bypassed {
+  background: rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+}
+
+.pill-status-tag.executed {
+  background: rgba(16, 185, 129, 0.25);
+  color: #34d399;
 }

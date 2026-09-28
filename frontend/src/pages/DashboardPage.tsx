@@ -64,6 +64,12 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelectBand }) => {
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
+  const [vlmEnabled, setVlmEnabled] = useState<boolean | undefined>(() => {
+    if (typeof window !== 'undefined' && (window.location.hostname.includes('render.com') || window.location.hostname.includes('onrender.com'))) {
+      return false;
+    }
+    return undefined;
+  });
   const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [queryMode, setQueryMode] = useState<'single_scene' | 'bitemporal' | 'multimodal_pair' | 'fusion'>('single_scene');
@@ -86,6 +92,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
       try {
         const health = await checkHealth();
         setBackendOnline(health.status === 'ok');
+        if (health.vlm_enabled !== undefined) {
+          setVlmEnabled(health.vlm_enabled);
+        }
       } catch (hErr) {
         console.warn('Health check issue:', hErr);
         setBackendOnline(false);
@@ -303,7 +312,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
 
   return (
     <div className="app-container">
-      <Header backendOnline={backendOnline} onGoHome={onGoHome} />
+      <Header backendOnline={backendOnline} onGoHome={onGoHome} vlmEnabled={vlmEnabled} />
 
       <div className="main-layout">
         <SceneSidebar
@@ -358,7 +367,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
 
               {/* Scientific Confidence & System Sidebar Column */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <ConfidenceCard confidence={result?.interpretation?.confidence} />
+                <ConfidenceCard
+                  confidence={result?.interpretation?.confidence}
+                  deploymentConstrained={Boolean(
+                    result?.analysis?.deployment_constrained ||
+                    (result as any)?.deployment_constrained ||
+                    (result?.interpretation?.confidence as any)?.deployment_constrained ||
+                    (vlmEnabled === false)
+                  )}
+                />
 
                 {/* Hackathon Specs Card */}
                 <div className="prompt-card" style={{ padding: 18, fontSize: '0.8rem', color: '#94a3b8' }}>

@@ -101,9 +101,14 @@ app.mount(
 
 @app.get("/api/health")
 def health_check():
+    from app.tools.vlm_analysis import is_local_vlm_enabled
+    vlm_enabled = is_local_vlm_enabled()
     return {
         "status": "ok",
-        "service": "SatQuery AI Backend"
+        "service": "SatQuery AI Backend",
+        "vlm_enabled": vlm_enabled,
+        "runtime_environment": "local_gpu" if vlm_enabled else "render_cloud",
+        "device": "NVIDIA GTX 1650 (FP16)" if vlm_enabled else "Cloud VLM Bypassed"
     }
 
 
