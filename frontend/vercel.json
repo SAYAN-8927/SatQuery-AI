@@ -7,6 +7,10 @@
     {
       "source": "/uploads/:path*",
       "destination": "https://satquery-ai-cloi.onrender.com/uploads/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
