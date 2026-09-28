@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://satquery-ai-cloi.onrender.com/api/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://satquery-ai-cloi.onrender.com/uploads/:path*"
+    }
+  ]
+}
