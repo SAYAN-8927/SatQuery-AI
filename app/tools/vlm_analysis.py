@@ -1,3 +1,4 @@
+import os
 import time
 import re
 import gc
@@ -9,6 +10,25 @@ ADAPTER_DIR = Path("app/ai/lora_adapter_rs")
 
 _MODEL = None
 _PROCESSOR = None
+
+
+def is_local_vlm_enabled() -> bool:
+    """
+    Check if local deep-learning VLM execution is permitted in the current runtime.
+    - Explicit override via ENABLE_LOCAL_VLM takes highest priority ("true" / "false").
+    - If running on Render (RENDER=true or RENDER_SERVICE_ID present), automatically disabled
+      to protect Render's 512 MB RAM limit.
+    - Otherwise (local workstation / GPU / Docker), enabled by default.
+    """
+    override = os.getenv("ENABLE_LOCAL_VLM")
+    if override is not None:
+        return override.strip().lower() in {"1", "true", "yes", "on", "enable", "enabled"}
+
+    # Automatic Render Cloud detection
+    if os.getenv("RENDER", "").lower() == "true" or bool(os.getenv("RENDER_SERVICE_ID")):
+        return False
+
+    return True
 
 
 def get_vlm_model():
@@ -210,6 +230,43 @@ def run_vlm_analysis(
                 "success": False,
                 "tool": "remote_sensing_vlm",
                 "error": f"The selected image file '{tgt}' could not be located on disk. Please verify the file exists or re-upload the image."
+            }
+
+        # Guard: Check deployment memory constraint before loading deep learning models
+        if not is_local_vlm_enabled():
+            ev_url = None
+            if resolved_image_path:
+                try:
+                    rel_ev = resolved_image_path.resolve().relative_to(Path("uploads").resolve()).as_posix()
+                    ev_url = f"/uploads/{rel_ev}"
+                except Exception:
+                    ev_url = f"/uploads/{resolved_image_path.name}"
+
+            return {
+                "success": True,
+                "tool": "remote_sensing_vlm",
+                "query": query,
+                "scene_id": target_scene_id or target_scene,
+                "image_analyzed": str(resolved_image_path) if resolved_image_path else None,
+                "image_filename": resolved_image_path.name if resolved_image_path else None,
+                "evidence": {
+                    "scene_image": ev_url
+                } if ev_url else {},
+                "answer": (
+                    "Vision-Language Model (VLM) deep inference is unavailable in this low-memory cloud deployment "
+                    "(Render 512 MB RAM limit; SmolVLM-500M requires ~1.66 GB). "
+                    "Deterministic scientific raster tools (NDVI Canopy, NDWI Water Delineation, 4-Band Spectral Signatures, "
+                    "Bi-Temporal Change Differencing, and Optical + SAR Radar Fusion) remain fully active and functional."
+                ),
+                "vlm_available": False,
+                "deployment_constrained": True,
+                "model_metadata": {
+                    "base_model": MODEL_ID,
+                    "adapter_path": str(ADAPTER_DIR),
+                    "status": "disabled_low_memory_deployment",
+                    "required_ram_mb": 1700,
+                    "available_host_limit_mb": 512
+                }
             }
 
         # Load model and processor (cached in memory)

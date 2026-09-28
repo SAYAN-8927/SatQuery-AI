@@ -795,15 +795,23 @@ def process_user_query(
             )
             continue
 
+        trace_completed_details = {
+            "tool": tool_name,
+            "target_scene_id": target_id,
+            "returned_scene_id": exec_res.get("scene_id", target_id),
+            "active_pair_id": active_pair_id if tool_name == "optical_sar_model" else None
+        }
+        if exec_res.get("deployment_constrained"):
+            trace_completed_details["vlm_status"] = "offline_low_memory_deployment"
+            trace_completed_details["deployment_note"] = (
+                "VLM deep inference bypassed on 512 MB Render deployment to prevent out-of-memory crash. "
+                "Deterministic scientific tools remain fully functional."
+            )
+
         trace.add_step(
             step="tool_execution",
             status="completed",
-            details={
-                "tool": tool_name,
-                "target_scene_id": target_id,
-                "returned_scene_id": exec_res.get("scene_id", target_id),
-                "active_pair_id": active_pair_id if tool_name == "optical_sar_model" else None
-            }
+            details=trace_completed_details
         )
 
         # Interpret tool output
@@ -811,9 +819,11 @@ def process_user_query(
         vlm_synthesis = None
         has_dedicated_vlm = any(t["tool"] == "remote_sensing_vlm" for t in ready_tools)
 
+        from app.tools.vlm_analysis import is_local_vlm_enabled
+
         if tool_name == "ndvi_analysis":
             wants_visual = any(k in query.lower() for k in ["explain", "describe", "visual", "look", "what it means", "what does this mean", "interpret"])
-            if not has_dedicated_vlm and wants_visual:
+            if not has_dedicated_vlm and wants_visual and is_local_vlm_enabled():
                 try:
                     from app.tools.vlm_analysis import run_vlm_analysis, find_scene_image
                     scene_img = find_scene_image(upload_dir, target_scene_id=target_id)
@@ -836,31 +846,32 @@ def process_user_query(
             comp_interpretation = interpret_ndvi_result(exec_res, vlm_synthesis=vlm_synthesis)
 
         elif tool_name == "change_detection_model":
-            try:
-                from app.tools.vlm_analysis import run_vlm_analysis
-                triplet_disk = exec_res.get("evidence", {}).get("triplet_disk_path")
-                stats = exec_res.get("statistics", {})
-                before_d = exec_res.get("before", {}).get("date", "Before")
-                after_d = exec_res.get("after", {}).get("date", "After")
-                dyn = stats.get("dynamic_classification", "Bi-temporal change")
-                m_chg = stats.get("mean_delta_ndvi") if stats.get("mean_delta_ndvi") is not None else stats.get("mean_ndvi_change", 0.0)
-                inc = stats.get("vegetation_gain_percentage") if stats.get("vegetation_gain_percentage") is not None else stats.get("increase_percentage", 0.0)
-                dec = stats.get("vegetation_loss_percentage") if stats.get("vegetation_loss_percentage") is not None else stats.get("decrease_percentage", 0.0)
-                stb = stats.get("stable_percentage", 0.0)
+            if is_local_vlm_enabled():
+                try:
+                    from app.tools.vlm_analysis import run_vlm_analysis
+                    triplet_disk = exec_res.get("evidence", {}).get("triplet_disk_path")
+                    stats = exec_res.get("statistics", {})
+                    before_d = exec_res.get("before", {}).get("date", "Before")
+                    after_d = exec_res.get("after", {}).get("date", "After")
+                    dyn = stats.get("dynamic_classification", "Bi-temporal change")
+                    m_chg = stats.get("mean_delta_ndvi") if stats.get("mean_delta_ndvi") is not None else stats.get("mean_ndvi_change", 0.0)
+                    inc = stats.get("vegetation_gain_percentage") if stats.get("vegetation_gain_percentage") is not None else stats.get("increase_percentage", 0.0)
+                    dec = stats.get("vegetation_loss_percentage") if stats.get("vegetation_loss_percentage") is not None else stats.get("decrease_percentage", 0.0)
+                    stb = stats.get("stable_percentage", 0.0)
 
-                change_prompt = (
-                    f"Bi-temporal satellite analysis between {before_d} and {after_d} detected {dyn}. "
-                    f"In 1 to 2 concise sentences, describe where the vegetation gains and losses visually occurred."
-                )
-                if triplet_disk and Path(triplet_disk).exists():
-                    vlm_synthesis = run_vlm_analysis(query=change_prompt, image_path=Path(triplet_disk))
-                    exec_res["vlm_synthesis"] = vlm_synthesis
-            except Exception:
-                pass
+                    change_prompt = (
+                        f"Bi-temporal satellite analysis between {before_d} and {after_d} detected {dyn}. "
+                        f"In 1 to 2 concise sentences, describe where the vegetation gains and losses visually occurred."
+                    )
+                    if triplet_disk and Path(triplet_disk).exists():
+                        vlm_synthesis = run_vlm_analysis(query=change_prompt, image_path=Path(triplet_disk))
+                        exec_res["vlm_synthesis"] = vlm_synthesis
+                except Exception:
+                    pass
             comp_interpretation = interpret_change_detection_result(exec_res, vlm_synthesis=vlm_synthesis)
 
         elif tool_name == "spectral_band_analysis":
-            if not has_dedicated_vlm:
+            if not has_dedicated_vlm and is_local_vlm_enabled():
                 try:
                     from app.tools.vlm_analysis import run_vlm_analysis, find_scene_image
                     scene_img = find_scene_image(upload_dir, target_scene_id=target_id)
@@ -879,19 +890,20 @@ def process_user_query(
             comp_interpretation = interpret_spectral_result(exec_res, vlm_synthesis=vlm_synthesis)
 
         elif tool_name == "optical_sar_model":
-            try:
-                from app.tools.vlm_analysis import run_vlm_analysis
-                comp_disk = exec_res.get("evidence", {}).get("composite_disk_path")
-                fus_m = exec_res.get("fusion_metrics", {})
-                cls_env = fus_m.get("environmental_classification", "multimodal terrain")
-                fusion_prompt = (
-                    f"In 1 to 2 concise sentences, summarize the surface features in this optical and radar composite."
-                )
-                if comp_disk and Path(comp_disk).exists():
-                    vlm_synthesis = run_vlm_analysis(query=fusion_prompt, image_path=Path(comp_disk))
-                    exec_res["vlm_synthesis"] = vlm_synthesis
-            except Exception:
-                pass
+            if is_local_vlm_enabled():
+                try:
+                    from app.tools.vlm_analysis import run_vlm_analysis
+                    comp_disk = exec_res.get("evidence", {}).get("composite_disk_path")
+                    fus_m = exec_res.get("fusion_metrics", {})
+                    cls_env = fus_m.get("environmental_classification", "multimodal terrain")
+                    fusion_prompt = (
+                        f"In 1 to 2 concise sentences, summarize the surface features in this optical and radar composite."
+                    )
+                    if comp_disk and Path(comp_disk).exists():
+                        vlm_synthesis = run_vlm_analysis(query=fusion_prompt, image_path=Path(comp_disk))
+                        exec_res["vlm_synthesis"] = vlm_synthesis
+                except Exception:
+                    pass
             comp_interpretation = interpret_optical_sar_result(exec_res, vlm_synthesis=vlm_synthesis)
 
         elif tool_name == "remote_sensing_vlm":

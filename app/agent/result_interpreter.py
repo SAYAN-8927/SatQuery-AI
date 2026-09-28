@@ -52,7 +52,7 @@ def interpret_ndvi_result(analysis: dict, vlm_synthesis: dict | None = None):
 
     # Incorporate Multimodal VLM visual context
     vlm_text = ""
-    if vlm_synthesis and vlm_synthesis.get("success"):
+    if vlm_synthesis and vlm_synthesis.get("success") and not vlm_synthesis.get("deployment_constrained") and vlm_synthesis.get("vlm_available", True):
         vlm_text = vlm_synthesis.get("answer", "").strip()
         if vlm_text:
             interpretation += f"\n\nMultimodal Visual Context:\n{vlm_text}"
@@ -160,7 +160,7 @@ def interpret_change_detection_result(analysis: dict, vlm_synthesis: dict | None
     )
 
     vlm_text = ""
-    if vlm_synthesis and vlm_synthesis.get("success"):
+    if vlm_synthesis and vlm_synthesis.get("success") and not vlm_synthesis.get("deployment_constrained") and vlm_synthesis.get("vlm_available", True):
         vlm_text = vlm_synthesis.get("answer", "").strip()
         if vlm_text:
             interpretation += f"\n\nChange-VQA Multimodal Synthesis:\n{vlm_text}"
@@ -210,6 +210,29 @@ def interpret_vlm_result(analysis: dict):
     answer = analysis.get("answer", "")
     image_analyzed = analysis.get("image_analyzed", "")
     model_metadata = analysis.get("model_metadata", {})
+
+    if analysis.get("deployment_constrained"):
+        return {
+            "success": True,
+            "interpretation": answer,
+            "headline": "VLM Offline (Cloud Deployment Memory Constraint)",
+            "summary": answer,
+            "confidence": {
+                "score": 1.0,
+                "level": "high",
+                "basis": [
+                    "Host environment enforces 512 MB memory limit (Render Free Tier).",
+                    "SmolVLM-500M inference requires ~1.66 GB RAM and was bypassed to preserve uptime.",
+                    "Deterministic scientific engines (NDVI, NDWI, Change Detection, Radar Fusion) are active."
+                ]
+            },
+            "basis": {
+                "status": "deployment_constrained",
+                "vlm_available": False,
+                "required_ram_mb": 1700,
+                "available_host_limit_mb": 512
+            }
+        }
 
     if not answer:
         return {
@@ -306,7 +329,7 @@ def interpret_spectral_result(analysis: dict, vlm_synthesis: dict | None = None)
         confidence_reasons.append("Spectral profile reflectance chart generated as visual evidence.")
 
     vlm_text = ""
-    if vlm_synthesis and vlm_synthesis.get("success"):
+    if vlm_synthesis and vlm_synthesis.get("success") and not vlm_synthesis.get("deployment_constrained") and vlm_synthesis.get("vlm_available", True):
         vlm_text = vlm_synthesis.get("answer", "").strip()
         if vlm_text:
             interpretation += f"\n\nMultimodal Visual Context:\n{vlm_text}"
@@ -395,7 +418,7 @@ def interpret_optical_sar_result(analysis: dict, vlm_synthesis: dict | None = No
         confidence_reasons.append("4-panel multimodal fusion composite generated as visual evidence.")
 
     vlm_text = ""
-    if vlm_synthesis and vlm_synthesis.get("success"):
+    if vlm_synthesis and vlm_synthesis.get("success") and not vlm_synthesis.get("deployment_constrained") and vlm_synthesis.get("vlm_available", True):
         vlm_text = vlm_synthesis.get("answer", "").strip()
         if vlm_text:
             interpretation += f"\n\nMultimodal Visual Context & Scientific Insights:\n{vlm_text}"
