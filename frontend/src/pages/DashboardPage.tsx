@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { Header } from '../components/Header';
+import type { BackendHealthStatus } from '../components/Header';
 import { SceneSidebar } from '../components/SceneSidebar';
 import { QuerySection } from '../components/QuerySection';
 import { ResultView } from '../components/ResultView';
@@ -10,7 +11,7 @@ import { ConfidenceCard } from '../components/ConfidenceCard';
 import { ExecutionTrace } from '../components/ExecutionTrace';
 import { checkHealth, fetchScenes, fetchExamples, processQuery, deleteScene, clearWorkspace } from '../api';
 import type { SceneData, ExampleQuery, QueryResult, UploadResponse, QueryPayload, SceneInfo } from '../types';
-import { Shield, Terminal, Trash2, AlertTriangle } from 'lucide-react';
+import { Shield, Terminal, Trash2, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -64,6 +65,7 @@ interface DashboardPageProps {
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelectBand }) => {
   const [backendOnline, setBackendOnline] = useState<boolean>(false);
+  const [backendStatus, setBackendStatus] = useState<BackendHealthStatus>('waking');
   const [vlmEnabled, setVlmEnabled] = useState<boolean | undefined>(() => {
     if (typeof window !== 'undefined' && (window.location.hostname.includes('render.com') || window.location.hostname.includes('onrender.com'))) {
       return false;
@@ -84,52 +86,123 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
   const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
 
-  // Initial Data Loading
-  const loadInitialData = async (): Promise<SceneData | null> => {
+  // Health-check & Cold-start Retry Refs
+  const POLL_INTERVAL_MS = 6000;
+  const MAX_RETRY_DURATION_MS = 180000; // 3 minutes
+
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checkInFlightRef = useRef<boolean>(false);
+  const retryStartTimeRef = useRef<number>(Date.now());
+  const isMountedRef = useRef<boolean>(true);
+
+  // Fetch scenes and examples once backend is healthy
+  const loadDashboardData = async (): Promise<SceneData | null> => {
     try {
       setSidebarLoading(true);
+      const [loadedScenes, loadedExamples] = await Promise.allSettled([
+        fetchScenes(),
+        fetchExamples(),
+      ]);
 
-      try {
-        const health = await checkHealth();
-        setBackendOnline(health.status === 'ok');
-        if (health.vlm_enabled !== undefined) {
-          setVlmEnabled(health.vlm_enabled);
-        }
-      } catch (hErr) {
-        console.warn('Health check issue:', hErr);
-        setBackendOnline(false);
+      if (!isMountedRef.current) return null;
+
+      let resultData: SceneData | null = null;
+      if (loadedScenes.status === 'fulfilled' && loadedScenes.value) {
+        setSceneData(loadedScenes.value);
+        resultData = loadedScenes.value;
       }
-
-      let loadedScenes: SceneData | null = null;
-      try {
-        loadedScenes = await fetchScenes();
-        if (loadedScenes) {
-          setSceneData(loadedScenes);
-        }
-      } catch (sErr) {
-        console.error('Failed to fetch scenes:', sErr);
+      if (loadedExamples.status === 'fulfilled' && loadedExamples.value) {
+        setExamples(loadedExamples.value);
       }
-
-      try {
-        const ex = await fetchExamples();
-        if (ex && ex.length > 0) {
-          setExamples(ex);
-        }
-      } catch (exErr) {
-        console.warn('Failed to fetch examples, using defaults:', exErr);
-      }
-
-      return loadedScenes;
+      return resultData;
     } catch (err) {
-      console.error('Initial loading error:', err);
+      console.error('Failed to fetch dashboard data:', err);
       return null;
     } finally {
-      setSidebarLoading(false);
+      if (isMountedRef.current) {
+        setSidebarLoading(false);
+      }
     }
   };
 
+  // Perform single health check & coordinate retry loop during cold start
+  const performHealthCheck = async () => {
+    if (checkInFlightRef.current || !isMountedRef.current) return;
+    checkInFlightRef.current = true;
+
+    try {
+      const health = await checkHealth(8000);
+      if (!isMountedRef.current) return;
+
+      if (health && health.status === 'ok') {
+        // Backend successfully connected
+        setBackendOnline(true);
+        setBackendStatus('online');
+        if (health.vlm_enabled !== undefined) {
+          setVlmEnabled(health.vlm_enabled);
+        }
+        // Stop any pending timer
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+        // Load scenes and catalog immediately
+        await loadDashboardData();
+        return;
+      }
+      throw new Error(`Health status: ${health?.status}`);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const elapsed = Date.now() - retryStartTimeRef.current;
+      if (elapsed >= MAX_RETRY_DURATION_MS) {
+        // Exceeded 3-minute retry window
+        setBackendOnline(false);
+        setBackendStatus('unavailable');
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
+        }
+      } else {
+        // Cold start in progress — keep retrying every 6 seconds
+        setBackendOnline(false);
+        setBackendStatus('waking');
+        if (retryTimerRef.current) {
+          clearTimeout(retryTimerRef.current);
+        }
+        retryTimerRef.current = setTimeout(() => {
+          performHealthCheck();
+        }, POLL_INTERVAL_MS);
+      }
+    } finally {
+      checkInFlightRef.current = false;
+    }
+  };
+
+  // Restart health check loop (used by Retry button)
+  const handleRetryConnection = () => {
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    retryStartTimeRef.current = Date.now();
+    setBackendOnline(false);
+    setBackendStatus('waking');
+    setSidebarLoading(true);
+    performHealthCheck();
+  };
+
   useEffect(() => {
-    loadInitialData();
+    isMountedRef.current = true;
+    retryStartTimeRef.current = Date.now();
+    performHealthCheck();
+
+    return () => {
+      isMountedRef.current = false;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
   }, []);
 
   const selectedScene = sceneData?.scenes?.find((s) => s.scene_id === selectedSceneId) || null;
@@ -207,7 +280,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
       }
 
       setSceneToDelete(null);
-      await loadInitialData();
+      await loadDashboardData();
     } catch (err: any) {
       alert(`Failed to delete scene: ${err.message}`);
     } finally {
@@ -225,7 +298,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
       setResult(null);
       setWorkspaceNotice('Workspace cleared. Upload satellite scenes to begin analysis.');
       setShowClearModal(false);
-      await loadInitialData();
+      await loadDashboardData();
     } catch (err: any) {
       alert(`Clear workspace failed: ${err.message}`);
     } finally {
@@ -280,13 +353,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
   const handleUploadSuccess = async (res: UploadResponse) => {
     setWorkspaceNotice(null);
     try {
-      const data = await loadInitialData();
+      const data = await loadDashboardData();
       if (data && data.scenes && data.scenes.length > 0) {
         // Auto-select the newly uploaded image!
         const targetSceneId = res.scene_id || (res.filename ? res.filename.replace(/\.[^/.]+$/, '') : null);
         if (targetSceneId) {
           const matched = data.scenes.find(
-            (s) => s.scene_id === targetSceneId ||
+            (s: SceneInfo) => s.scene_id === targetSceneId ||
                    s.source_file === res.filename ||
                    s.scene_id.toLowerCase() === targetSceneId.toLowerCase() ||
                    s.scene_id.toLowerCase().includes(targetSceneId.toLowerCase())
@@ -296,7 +369,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
             setQueryMode('single_scene');
             setResult(null);
           } else {
-            const firstGeneric = data.scenes.find(s => s.is_generic_image);
+            const firstGeneric = data.scenes.find((s: SceneInfo) => s.is_generic_image);
             if (firstGeneric) {
               setSelectedSceneId(firstGeneric.scene_id);
               setQueryMode('single_scene');
@@ -312,14 +385,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
 
   return (
     <div className="app-container">
-      <Header backendOnline={backendOnline} onGoHome={onGoHome} vlmEnabled={vlmEnabled} />
+      <Header
+        backendOnline={backendOnline}
+        backendStatus={backendStatus}
+        onRetry={handleRetryConnection}
+        onGoHome={onGoHome}
+        vlmEnabled={vlmEnabled}
+      />
 
       <div className="main-layout">
         <SceneSidebar
           sceneData={sceneData}
           loading={sidebarLoading}
           selectedSceneId={selectedSceneId}
-          onRefresh={loadInitialData}
+          onRefresh={backendOnline ? loadDashboardData : handleRetryConnection}
           onUploadSuccess={handleUploadSuccess}
           onSelectBand={(sceneId, band) => onSelectBand?.(sceneId, band)}
           onSelectScene={handleSelectScene}
@@ -333,6 +412,45 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
         />
 
         <main className="stage-content">
+          {/* Cloud Cold-start Waking Banner */}
+          {backendStatus === 'waking' && !backendOnline && (
+            <div className="backend-waking-banner">
+              <div className="waking-banner-left">
+                <Loader2 size={16} className="waking-spinner" />
+                <div>
+                  <strong>Starting cloud backend...</strong>
+                  <span className="waking-subtext">
+                    Initializing remote-sensing analysis engine on Render. Automatically reconnecting every 6 seconds — please wait.
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Backend Unavailable Banner (after 3 minutes) */}
+          {backendStatus === 'unavailable' && !backendOnline && (
+            <div className="backend-unavailable-banner">
+              <div className="unavailable-banner-left">
+                <AlertTriangle size={18} color="#f43f5e" />
+                <div>
+                  <strong>Backend is temporarily unavailable. Please try again.</strong>
+                  <span className="unavailable-subtext">
+                    Could not establish connection to the cloud backend after 3 minutes.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRetryConnection}
+                className="backend-retry-btn"
+                title="Restart backend health check"
+              >
+                <RefreshCw size={13} />
+                <span>Retry Connection</span>
+              </button>
+            </div>
+          )}
+
           {/* Query Bar & 1-Click SIH Benchmark Presets */}
           <QuerySection
             examples={examples}

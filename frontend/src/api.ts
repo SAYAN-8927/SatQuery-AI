@@ -35,16 +35,28 @@ export function resetWorkspaceId(): string {
   return wsId;
 }
 
-export async function checkHealth(): Promise<{
+export async function checkHealth(timeoutMs: number = 8000): Promise<{
   status: string;
   service: string;
   vlm_enabled?: boolean;
   runtime_environment?: string;
   device?: string;
 }> {
-  const res = await fetch('/api/health');
-  if (!res.ok) throw new Error(`Health check failed: ${res.statusText}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch('/api/health', {
+      signal: controller.signal,
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
+    if (!res.ok) throw new Error(`Health check failed: HTTP ${res.status} ${res.statusText}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function fetchScenes(customWsId?: string): Promise<SceneData> {

@@ -21,6 +21,13 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDashboard }) => {
+  React.useEffect(() => {
+    // Proactively ping health endpoint to trigger Render wake-up while judge explores the landing page
+    fetch('/api/health', {
+      headers: { 'Cache-Control': 'no-cache' },
+    }).catch(() => {});
+  }, []);
+
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
     if (el) {

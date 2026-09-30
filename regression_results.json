@@ -1,11 +1,11 @@
 {
   "1": {
     "pass": true,
-    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.181"
   },
   "2": {
     "pass": true,
-    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.181"
   },
   "3": {
     "pass": true,
@@ -49,7 +49,7 @@
   },
   "13": {
     "pass": true,
-    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.181"
   },
   "14": {
     "pass": true,
@@ -73,7 +73,7 @@
   },
   "19": {
     "pass": true,
-    "details": "Tool: spectral_band_analysis, NDWI: -0.1972"
+    "details": "Tool: spectral_band_analysis, NDWI: -0.1984"
   },
   "20": {
     "pass": true,
@@ -97,11 +97,11 @@
   },
   "25": {
     "pass": true,
-    "details": "Catalog intact with 11 scenes"
+    "details": "Catalog intact with 12 scenes"
   },
   "26": {
     "pass": true,
-    "details": "Upload 1 saved as 'test_dup.png', Upload 2 saved as 'test_dup_93b58630.png' (Coexisting unique identities)"
+    "details": "Upload 1 saved as 'test_dup_bf6e855b.png', Upload 2 saved as 'test_dup_93b58630.png' (Coexisting unique identities)"
   },
   "27": {
     "pass": true,
@@ -113,10 +113,10 @@
   },
   "29": {
     "pass": true,
-    "details": "Tool: ndvi_analysis, Mean NDVI: 0.1763395369052887"
+    "details": "Tool: ndvi_analysis, Mean NDVI: 0.181"
   },
   "30": {
     "pass": true,
-    "details": "Run 1: 0.1763395369052887, Run 2: 0.1763395369052887, Deterministic match: True"
+    "details": "Run 1: 0.181, Run 2: 0.181, Deterministic match: True"
   }
 }
