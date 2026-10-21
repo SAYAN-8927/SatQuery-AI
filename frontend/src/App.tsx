@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LandingPage } from './pages/LandingPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { BandPreviewPage } from './pages/BandPreviewPage';
+import { useBackendHealth } from './useBackendHealth';
 
 interface RouteState {
   name: 'landing' | 'dashboard' | 'band-preview';
@@ -31,6 +32,7 @@ const parseRoute = (): RouteState => {
 
 export const App: React.FC = () => {
   const [route, setRoute] = useState<RouteState>(parseRoute);
+  const { backendOnline, backendStatus, vlmEnabled, retryConnection } = useBackendHealth();
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -82,11 +84,22 @@ export const App: React.FC = () => {
         onSelectBand={(sceneId, band) =>
           navigate(`/band-preview/${encodeURIComponent(sceneId)}/${encodeURIComponent(band)}`)
         }
+        backendOnline={backendOnline}
+        backendStatus={backendStatus}
+        vlmEnabled={vlmEnabled}
+        onRetry={retryConnection}
       />
     );
   }
 
-  return <LandingPage onLaunchDashboard={() => navigate('/dashboard')} />;
+  return (
+    <LandingPage
+      onLaunchDashboard={() => navigate('/dashboard')}
+      backendOnline={backendOnline}
+      backendStatus={backendStatus}
+      onRetry={retryConnection}
+    />
+  );
 };
 
 export default App;

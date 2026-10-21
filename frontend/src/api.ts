@@ -35,25 +35,55 @@ export function resetWorkspaceId(): string {
   return wsId;
 }
 
-export async function checkHealth(timeoutMs: number = 8000): Promise<{
+export const DEFAULT_RENDER_BACKEND_URL = 'https://satquery-ai-cloi.onrender.com';
+
+export function getHealthCheckUrl(): string {
+  // If explicitly specified in Vite environment variable, use that
+  const envUrl = (import.meta as any).env?.VITE_API_BASE_URL || (import.meta as any).env?.VITE_BACKEND_URL;
+  if (envUrl && typeof envUrl === 'string') {
+    return `${envUrl.replace(/\/+$/, '')}/api/health`;
+  }
+  // When running locally in dev (localhost or 127.0.0.1), use relative path so Vite proxy handles it
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return '/api/health';
+  }
+  // In production (e.g. on Vercel), send directly to Render to bypass serverless rewrite timeouts during cold start
+  return `${DEFAULT_RENDER_BACKEND_URL}/api/health`;
+}
+
+export interface HealthResponse {
   status: string;
   service: string;
   vlm_enabled?: boolean;
   runtime_environment?: string;
   device?: string;
-}> {
+}
+
+export async function checkHealth(timeoutMs: number = 10000): Promise<HealthResponse> {
+  const url = getHealthCheckUrl();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch('/api/health', {
+    const res = await fetch(url, {
+      method: 'GET',
       signal: controller.signal,
       headers: {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
       },
     });
-    if (!res.ok) throw new Error(`Health check failed: HTTP ${res.status} ${res.statusText}`);
-    return await res.json();
+    if (!res.ok) {
+      throw new Error(`Health check returned HTTP ${res.status} ${res.statusText}`);
+    }
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error(`Unexpected content-type from health endpoint: ${contentType}`);
+    }
+    const data: HealthResponse = await res.json();
+    if (!data || data.status !== 'ok') {
+      throw new Error(`Invalid health response payload: ${JSON.stringify(data)}`);
+    }
+    return data;
   } finally {
     clearTimeout(timer);
   }

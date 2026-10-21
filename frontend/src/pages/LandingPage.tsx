@@ -11,23 +11,27 @@ import {
   Terminal,
   FileCheck2,
   CheckCircle2,
-  Search
+  Search,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { CircularCapabilityCarousel } from '../components/CircularCapabilityCarousel';
 import { HeroOrbitalVisual } from '../components/HeroOrbitalVisual';
+import type { BackendHealthStatus } from '../useBackendHealth';
 
 interface LandingPageProps {
   onLaunchDashboard: () => void;
+  backendOnline?: boolean;
+  backendStatus?: BackendHealthStatus;
+  onRetry?: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDashboard }) => {
-  React.useEffect(() => {
-    // Proactively ping health endpoint to trigger Render wake-up while judge explores the landing page
-    fetch('/api/health', {
-      headers: { 'Cache-Control': 'no-cache' },
-    }).catch(() => {});
-  }, []);
-
+export const LandingPage: React.FC<LandingPageProps> = ({
+  onLaunchDashboard,
+  backendOnline: _backendOnline,
+  backendStatus,
+  onRetry,
+}) => {
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
     if (el) {
@@ -58,6 +62,61 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunchDashboard }) =
           </div>
 
           <div className="landing-nav-actions">
+            {backendStatus && (
+              <div
+                className={`status-badge ${
+                  backendStatus === 'online'
+                    ? 'online'
+                    : backendStatus === 'checking'
+                    ? 'checking'
+                    : backendStatus === 'waking'
+                    ? 'waking'
+                    : 'disconnected'
+                }`}
+                style={{ cursor: 'default' }}
+                title="Render FastAPI backend connection status"
+              >
+                {backendStatus === 'online' && (
+                  <>
+                    <div className="status-dot" style={{ backgroundColor: '#10b981', boxShadow: '0 0 10px #10b981' }} />
+                    <span>Backend online</span>
+                  </>
+                )}
+                {backendStatus === 'checking' && (
+                  <>
+                    <div className="status-dot checking" />
+                    <Loader2 size={12} className="status-spin" style={{ color: '#38bdf8' }} />
+                    <span>Checking connection</span>
+                  </>
+                )}
+                {backendStatus === 'waking' && (
+                  <>
+                    <div className="status-dot waking" style={{ backgroundColor: '#f59e0b', boxShadow: '0 0 10px #f59e0b' }} />
+                    <Loader2 size={12} className="status-spin" style={{ color: '#f59e0b' }} />
+                    <span>Waking backend — first startup may take around a minute</span>
+                  </>
+                )}
+                {(backendStatus === 'unavailable' || backendStatus === 'disconnected') && (
+                  <>
+                    <div className="status-dot" style={{ backgroundColor: '#f43f5e', boxShadow: '0 0 10px #f43f5e' }} />
+                    <span>Backend unavailable</span>
+                    {onRetry && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRetry();
+                        }}
+                        className="badge-retry-btn"
+                        title="Retry connecting to backend"
+                      >
+                        <RefreshCw size={10} />
+                        <span>Retry</span>
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
             <button onClick={onLaunchDashboard} className="landing-cta-btn compact">
               <span>Launch Dashboard</span>
               <ArrowRight size={15} />

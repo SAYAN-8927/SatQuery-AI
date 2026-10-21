@@ -9,7 +9,7 @@ import { EvidenceViewer } from '../components/EvidenceViewer';
 import { MetricsGrid } from '../components/MetricsGrid';
 import { ConfidenceCard } from '../components/ConfidenceCard';
 import { ExecutionTrace } from '../components/ExecutionTrace';
-import { checkHealth, fetchScenes, fetchExamples, processQuery, deleteScene, clearWorkspace } from '../api';
+import { fetchScenes, fetchExamples, processQuery, deleteScene, clearWorkspace } from '../api';
 import type { SceneData, ExampleQuery, QueryResult, UploadResponse, QueryPayload, SceneInfo } from '../types';
 import { Shield, Terminal, Trash2, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 
@@ -61,17 +61,20 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 interface DashboardPageProps {
   onGoHome?: () => void;
   onSelectBand?: (sceneId: string, band: string) => void;
+  backendOnline?: boolean;
+  backendStatus?: BackendHealthStatus;
+  vlmEnabled?: boolean;
+  onRetry?: () => void;
 }
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelectBand }) => {
-  const [backendOnline, setBackendOnline] = useState<boolean>(false);
-  const [backendStatus, setBackendStatus] = useState<BackendHealthStatus>('waking');
-  const [vlmEnabled, setVlmEnabled] = useState<boolean | undefined>(() => {
-    if (typeof window !== 'undefined' && (window.location.hostname.includes('render.com') || window.location.hostname.includes('onrender.com'))) {
-      return false;
-    }
-    return undefined;
-  });
+export const DashboardPage: React.FC<DashboardPageProps> = ({
+  onGoHome,
+  onSelectBand,
+  backendOnline = false,
+  backendStatus = 'checking',
+  vlmEnabled,
+  onRetry,
+}) => {
   const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [queryMode, setQueryMode] = useState<'single_scene' | 'bitemporal' | 'multimodal_pair' | 'fusion'>('single_scene');
@@ -86,14 +89,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
   const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
 
-  // Health-check & Cold-start Retry Refs
-  const POLL_INTERVAL_MS = 6000;
-  const MAX_RETRY_DURATION_MS = 180000; // 3 minutes
-
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const checkInFlightRef = useRef<boolean>(false);
-  const retryStartTimeRef = useRef<number>(Date.now());
   const isMountedRef = useRef<boolean>(true);
+  const loadedOnceRef = useRef<boolean>(false);
 
   // Fetch scenes and examples once backend is healthy
   const loadDashboardData = async (): Promise<SceneData | null> => {
@@ -125,85 +122,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
     }
   };
 
-  // Perform single health check & coordinate retry loop during cold start
-  const performHealthCheck = async () => {
-    if (checkInFlightRef.current || !isMountedRef.current) return;
-    checkInFlightRef.current = true;
-
-    try {
-      const health = await checkHealth(8000);
-      if (!isMountedRef.current) return;
-
-      if (health && health.status === 'ok') {
-        // Backend successfully connected
-        setBackendOnline(true);
-        setBackendStatus('online');
-        if (health.vlm_enabled !== undefined) {
-          setVlmEnabled(health.vlm_enabled);
-        }
-        // Stop any pending timer
-        if (retryTimerRef.current) {
-          clearTimeout(retryTimerRef.current);
-          retryTimerRef.current = null;
-        }
-        // Load scenes and catalog immediately
-        await loadDashboardData();
-        return;
-      }
-      throw new Error(`Health status: ${health?.status}`);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      const elapsed = Date.now() - retryStartTimeRef.current;
-      if (elapsed >= MAX_RETRY_DURATION_MS) {
-        // Exceeded 3-minute retry window
-        setBackendOnline(false);
-        setBackendStatus('unavailable');
-        if (retryTimerRef.current) {
-          clearTimeout(retryTimerRef.current);
-          retryTimerRef.current = null;
-        }
-      } else {
-        // Cold start in progress — keep retrying every 6 seconds
-        setBackendOnline(false);
-        setBackendStatus('waking');
-        if (retryTimerRef.current) {
-          clearTimeout(retryTimerRef.current);
-        }
-        retryTimerRef.current = setTimeout(() => {
-          performHealthCheck();
-        }, POLL_INTERVAL_MS);
-      }
-    } finally {
-      checkInFlightRef.current = false;
-    }
-  };
-
   // Restart health check loop (used by Retry button)
   const handleRetryConnection = () => {
-    if (retryTimerRef.current) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
+    if (onRetry) {
+      onRetry();
     }
-    retryStartTimeRef.current = Date.now();
-    setBackendOnline(false);
-    setBackendStatus('waking');
-    setSidebarLoading(true);
-    performHealthCheck();
   };
 
   useEffect(() => {
     isMountedRef.current = true;
-    retryStartTimeRef.current = Date.now();
-    performHealthCheck();
-
+    if (backendOnline && !loadedOnceRef.current) {
+      loadedOnceRef.current = true;
+      loadDashboardData();
+    }
     return () => {
       isMountedRef.current = false;
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
     };
-  }, []);
+  }, [backendOnline]);
 
   const selectedScene = sceneData?.scenes?.find((s) => s.scene_id === selectedSceneId) || null;
   const bitemporalPair = sceneData?.bi_temporal_pairs && sceneData.bi_temporal_pairs.length > 0 ? sceneData.bi_temporal_pairs[0] : null;
@@ -418,24 +353,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
               <div className="waking-banner-left">
                 <Loader2 size={16} className="waking-spinner" />
                 <div>
-                  <strong>Starting cloud backend...</strong>
+                  <strong>Waking backend — first startup may take around a minute</strong>
                   <span className="waking-subtext">
-                    Initializing remote-sensing analysis engine on Render. Automatically reconnecting every 6 seconds — please wait.
+                    Initializing remote-sensing analysis engine on Render. Automatically reconnecting with increasing intervals — please wait.
                   </span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Backend Unavailable Banner (after 3 minutes) */}
-          {backendStatus === 'unavailable' && !backendOnline && (
+          {/* Backend Unavailable Banner (after retry window) */}
+          {(backendStatus === 'unavailable' || backendStatus === 'disconnected') && !backendOnline && (
             <div className="backend-unavailable-banner">
               <div className="unavailable-banner-left">
                 <AlertTriangle size={18} color="#f43f5e" />
                 <div>
-                  <strong>Backend is temporarily unavailable. Please try again.</strong>
+                  <strong>Backend unavailable</strong>
                   <span className="unavailable-subtext">
-                    Could not establish connection to the cloud backend after 3 minutes.
+                    Could not establish connection to the cloud backend after retry window.
                   </span>
                 </div>
               </div>
@@ -446,7 +381,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onGoHome, onSelect
                 title="Restart backend health check"
               >
                 <RefreshCw size={13} />
-                <span>Retry Connection</span>
+                <span>Retry</span>
               </button>
             </div>
           )}

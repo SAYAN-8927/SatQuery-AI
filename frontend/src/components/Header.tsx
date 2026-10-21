@@ -1,7 +1,8 @@
 import React from 'react';
 import { Satellite, Cpu, ShieldCheck, Home, Loader2, RefreshCw } from 'lucide-react';
 
-export type BackendHealthStatus = 'disconnected' | 'waking' | 'online' | 'unavailable';
+import type { BackendHealthStatus } from '../useBackendHealth';
+export type { BackendHealthStatus };
 
 interface HeaderProps {
   backendOnline: boolean;
@@ -35,17 +36,27 @@ export const Header: React.FC<HeaderProps> = ({
       return (
         <div className="status-badge online" title="FastAPI Remote-Sensing Backend is connected and operational">
           <div className="status-dot" style={{ backgroundColor: '#10b981', boxShadow: '0 0 10px #10b981' }} />
-          <span>FastAPI Backend Online</span>
+          <span>Backend online</span>
+        </div>
+      );
+    }
+
+    if (currentStatus === 'checking') {
+      return (
+        <div className="status-badge checking" title="Checking connection to FastAPI backend...">
+          <div className="status-dot checking" />
+          <Loader2 size={12} className="status-spin" style={{ color: '#38bdf8' }} />
+          <span>Checking connection</span>
         </div>
       );
     }
 
     if (currentStatus === 'waking') {
       return (
-        <div className="status-badge waking" title="Backend is waking up from idle state. Automatic retry in progress...">
+        <div className="status-badge waking" title="Backend is waking up from idle state. First startup may take around a minute...">
           <div className="status-dot waking" style={{ backgroundColor: '#f59e0b', boxShadow: '0 0 10px #f59e0b' }} />
           <Loader2 size={12} className="status-spin" style={{ color: '#f59e0b' }} />
-          <span>Waking backend...</span>
+          <span>Waking backend — first startup may take around a minute</span>
         </div>
       );
     }
@@ -54,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
     return (
       <div className="status-badge disconnected" title="Backend is currently offline or unreachable">
         <div className="status-dot" style={{ backgroundColor: '#f43f5e', boxShadow: '0 0 10px #f43f5e' }} />
-        <span>Backend Disconnected</span>
+        <span>Backend unavailable</span>
         {onRetry && (
           <button
             onClick={(e) => {
